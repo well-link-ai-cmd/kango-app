@@ -31,9 +31,15 @@ export async function generateAiResponse(prompt: string): Promise<AiResponse> {
 
 async function generateWithGemini(apiKey: string, prompt: string): Promise<AiResponse> {
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-  const result = await model.generateContent(prompt);
+  const timeoutMs = 30000;
+  const result = await Promise.race([
+    model.generateContent(prompt),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("AI応答がタイムアウトしました（30秒）。再度お試しください。")), timeoutMs)
+    ),
+  ]);
   const text = result.response.text();
   return { text };
 }
@@ -43,11 +49,17 @@ async function generateWithClaude(apiKey: string, prompt: string): Promise<AiRes
   const Anthropic = (await import("@anthropic-ai/sdk")).default;
   const client = new Anthropic({ apiKey });
 
-  const message = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1024,
-    messages: [{ role: "user", content: prompt }],
-  });
+  const timeoutMs = 30000;
+  const message = await Promise.race([
+    client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("AI応答がタイムアウトしました（30秒）。再度お試しください。")), timeoutMs)
+    ),
+  ]);
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
   return { text };
