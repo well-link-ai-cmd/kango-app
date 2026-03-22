@@ -1,12 +1,14 @@
 // データ型定義
 
 export type CareLevel =
+  | "なし"
   | "要支援1" | "要支援2"
   | "要介護1" | "要介護2" | "要介護3" | "要介護4" | "要介護5";
 
 export interface Patient {
   id: string;
   name: string;
+  nameKana?: string;          // ふりがな（あかさたなグループ用）
   age: number;
   careLevel: CareLevel;
   diagnosis: string;          // 主病名
@@ -28,6 +30,15 @@ export interface Patient {
 
   // ケアプラン・担当者会議内容（AI精度向上用）
   carePlan?: string;          // ケアプラン・担当者会議での方針
+
+  // 導入時に貼り付ける直近のSOAP記録（初回からAIの精度を上げる）
+  initialSoapRecords?: {
+    S: string;
+    O: string;
+    A: string;
+    P: string;
+    visitDate?: string;
+  }[];
 
   createdAt: string;
 }
@@ -89,6 +100,28 @@ export function saveRecord(record: SoapRecord): void {
 export function deleteRecord(id: string): void {
   const list = getRecords().filter((r) => r.id !== id);
   localStorage.setItem(RECORDS_KEY, JSON.stringify(list));
+}
+
+/** 特定の利用者の特定年月の記録を取得 */
+export function getRecordsByYearMonth(patientId: string, year: number, month: number): SoapRecord[] {
+  const prefix = `${year}-${String(month).padStart(2, "0")}`;
+  return getRecords(patientId).filter((r) => r.visitDate.startsWith(prefix));
+}
+
+/** 特定の利用者の記録がある年月一覧を返す（新しい順） */
+export function getRecordMonths(patientId: string): { year: number; month: number; label: string }[] {
+  const records = getRecords(patientId);
+  const seen = new Set<string>();
+  const result: { year: number; month: number; label: string }[] = [];
+  for (const r of records.sort((a, b) => b.visitDate.localeCompare(a.visitDate))) {
+    const [y, m] = r.visitDate.split("-");
+    const key = `${y}-${m}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push({ year: Number(y), month: Number(m), label: `${y}年${Number(m)}月` });
+    }
+  }
+  return result;
 }
 
 export function generateId(): string {

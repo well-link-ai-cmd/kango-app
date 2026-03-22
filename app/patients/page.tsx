@@ -1,22 +1,47 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { getPatients, deletePatient, type Patient } from "@/lib/storage";
-import { UserPlus, FileText, Trash2, ChevronRight } from "lucide-react";
+import { UserPlus, FileText, Trash2, ChevronRight, Search } from "lucide-react";
 
-const CARE_LEVEL_COLOR: Record<string, string> = {
-  "要支援1": "bg-green-100 text-green-700",
-  "要支援2": "bg-green-100 text-green-700",
-  "要介護1": "bg-blue-100 text-blue-700",
-  "要介護2": "bg-blue-100 text-blue-700",
-  "要介護3": "bg-yellow-100 text-yellow-700",
-  "要介護4": "bg-orange-100 text-orange-700",
-  "要介護5": "bg-red-100 text-red-700",
+const CARE_LEVEL_BADGE: Record<string, string> = {
+  "要支援1": "badge-green",
+  "要支援2": "badge-green",
+  "要介護1": "badge-blue",
+  "要介護2": "badge-blue",
+  "要介護3": "badge-yellow",
+  "要介護4": "badge-orange",
+  "要介護5": "badge-red",
 };
+
+const KANA_GROUPS = [
+  { label: "あ行", chars: "あいうえおアイウエオ" },
+  { label: "か行", chars: "かきくけこがぎぐげごカキクケコガギグゲゴ" },
+  { label: "さ行", chars: "さしすせそざじずぜぞサシスセソザジズゼゾ" },
+  { label: "た行", chars: "たちつてとだぢづでどタチツテトダヂヅデド" },
+  { label: "な行", chars: "なにぬねのナニヌネノ" },
+  { label: "は行", chars: "はひふへほばびぶべぼぱぴぷぺぽハヒフヘホバビブベボパピプペポ" },
+  { label: "ま行", chars: "まみむめもマミムメモ" },
+  { label: "や行", chars: "やゆよヤユヨ" },
+  { label: "ら行", chars: "らりるれろラリルレロ" },
+  { label: "わ行", chars: "わをんワヲンヴ" },
+];
+
+function getKanaGroup(patient: Patient): string {
+  const kana = patient.nameKana?.trim();
+  if (!kana) return "その他";
+  const firstChar = kana.charAt(0);
+  for (const group of KANA_GROUPS) {
+    if (group.chars.includes(firstChar)) return group.label;
+  }
+  return "その他";
+}
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
 
   useEffect(() => {
     setPatients(getPatients());
@@ -28,68 +53,184 @@ export default function PatientsPage() {
     setPatients(getPatients());
   }
 
+  // 検索フィルタ
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return patients;
+    const q = searchQuery.trim().toLowerCase();
+    return patients.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.nameKana && p.nameKana.toLowerCase().includes(q)) ||
+        p.diagnosis.toLowerCase().includes(q) ||
+        (p.nurseInCharge && p.nurseInCharge.toLowerCase().includes(q))
+    );
+  }, [patients, searchQuery]);
+
+  // あかさたなグループ分け
+  const grouped = useMemo(() => {
+    const map = new Map<string, Patient[]>();
+    for (const p of filtered) {
+      const group = getKanaGroup(p);
+      if (!map.has(group)) map.set(group, []);
+      map.get(group)!.push(p);
+    }
+    // あかさたな順にソート
+    const order = [...KANA_GROUPS.map((g) => g.label), "その他"];
+    return order
+      .filter((label) => map.has(label))
+      .map((label) => ({ label, patients: map.get(label)! }));
+  }, [filtered]);
+
+  // 存在するグループだけタブに表示
+  const availableGroups = useMemo(() => grouped.map((g) => g.label), [grouped]);
+
+  // activeGroupフィルタ
+  const displayed = activeGroup
+    ? grouped.filter((g) => g.label === activeGroup)
+    : grouped;
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ヘッダー */}
-      <header className="bg-blue-700 text-white px-4 py-4 shadow">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
+    <div className="min-h-screen relative z-[1]">
+      {/* Header */}
+      <header className="app-header">
+        <div className="app-header-inner justify-between">
           <div>
-            <h1 className="text-xl font-bold">AI訪問看護記録アシスト</h1>
-            <p className="text-blue-200 text-sm mt-0.5">利用者一覧</p>
+            <div className="logo-badge">Well-Link AI</div>
+            <h1>AI訪問看護記録アシスト</h1>
+            <p className="subtitle">利用者一覧（{patients.length}名）</p>
           </div>
-          <Link
-            href="/patients/new"
-            className="flex items-center gap-2 bg-white text-blue-700 font-semibold px-4 py-2 rounded-full text-sm shadow hover:bg-blue-50 transition"
-          >
+          <Link href="/patients/new" className="btn-outline">
             <UserPlus size={16} />
             利用者追加
           </Link>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-6">
+      <main className="max-w-2xl mx-auto px-4 py-6 relative z-[1]">
         {patients.length === 0 ? (
-          <div className="text-center py-20 text-gray-400">
-            <FileText size={48} className="mx-auto mb-4 opacity-40" />
-            <p className="text-lg">利用者が登録されていません</p>
-            <p className="text-sm mt-2">「利用者追加」から登録してください</p>
+          <div className="empty-state animate-fade-in-up">
+            <FileText size={52} className="empty-state-icon" />
+            <p className="text-lg font-medium" style={{ color: "var(--text-secondary)" }}>利用者が登録されていません</p>
+            <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>「利用者追加」から登録してください</p>
           </div>
         ) : (
-          <ul className="space-y-3">
-            {patients.map((p) => (
-              <li key={p.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="flex items-center">
-                  <Link
-                    href={`/patients/${p.id}`}
-                    className="flex-1 flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition"
-                  >
-                    {/* アバター */}
-                    <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-lg flex-shrink-0">
-                      {p.name.charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-gray-900 text-lg">{p.name} 様</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CARE_LEVEL_COLOR[p.careLevel] ?? "bg-gray-100 text-gray-600"}`}>
-                          {p.careLevel}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-500 mt-0.5">{p.age}歳　{p.diagnosis}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">担当：{p.nurseInCharge}</p>
-                    </div>
-                    <ChevronRight size={20} className="text-gray-300 flex-shrink-0" />
-                  </Link>
+          <div className="space-y-4 animate-fade-in-up">
+            {/* Search Bar */}
+            <div className="relative">
+              <Search
+                size={18}
+                className="absolute left-4 top-1/2 -translate-y-1/2"
+                style={{ color: "var(--text-muted)" }}
+              />
+              <input
+                type="text"
+                className="input-field"
+                style={{ paddingLeft: "44px" }}
+                placeholder="名前・ふりがな・疾患・担当で検索"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+
+            {/* あかさたな tabs */}
+            {!searchQuery.trim() && availableGroups.length > 1 && (
+              <div className="flex gap-1.5 flex-wrap">
+                <button
+                  onClick={() => setActiveGroup(null)}
+                  className="text-xs px-3 py-1.5 rounded-full font-medium transition-colors"
+                  style={{
+                    background: activeGroup === null ? "var(--accent-cyan)" : "var(--bg-tertiary)",
+                    color: activeGroup === null ? "#fff" : "var(--text-secondary)",
+                  }}
+                >
+                  すべて
+                </button>
+                {availableGroups.map((label) => (
                   <button
-                    onClick={() => handleDelete(p.id, p.name)}
-                    className="px-4 py-4 text-red-300 hover:text-red-500 hover:bg-red-50 transition"
-                    aria-label="削除"
+                    key={label}
+                    onClick={() => setActiveGroup(activeGroup === label ? null : label)}
+                    className="text-xs px-3 py-1.5 rounded-full font-medium transition-colors"
+                    style={{
+                      background: activeGroup === label ? "var(--accent-cyan)" : "var(--bg-tertiary)",
+                      color: activeGroup === label ? "#fff" : "var(--text-secondary)",
+                    }}
                   >
-                    <Trash2 size={18} />
+                    {label}
                   </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+                ))}
+              </div>
+            )}
+
+            {/* Grouped List */}
+            {filtered.length === 0 ? (
+              <div className="empty-state">
+                <p style={{ color: "var(--text-muted)" }}>該当する利用者が見つかりません</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {displayed.map(({ label, patients: groupPatients }) => (
+                  <div key={label}>
+                    {/* Group Header */}
+                    {(displayed.length > 1 || activeGroup) && (
+                      <div
+                        className="flex items-center gap-2 mb-2 px-1"
+                      >
+                        <span
+                          className="text-xs font-bold px-2.5 py-1 rounded-md"
+                          style={{ background: "var(--bg-tertiary)", color: "var(--accent-cyan)" }}
+                        >
+                          {label}
+                        </span>
+                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                          {groupPatients.length}名
+                        </span>
+                        <div className="flex-1 h-px" style={{ background: "var(--bg-tertiary)" }} />
+                      </div>
+                    )}
+
+                    <ul className="space-y-2">
+                      {groupPatients.map((p) => (
+                        <li key={p.id} className="card card-interactive overflow-hidden">
+                          <div className="flex items-center">
+                            <Link
+                              href={`/patients/${p.id}`}
+                              className="flex-1 flex items-center gap-4 px-5 py-4 transition-colors"
+                            >
+                              <div className="avatar">
+                                {p.name.charAt(0)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-lg" style={{ color: "var(--text-primary)" }}>{p.name} 様</span>
+                                  {p.careLevel !== "なし" && (
+                                    <span className={`badge ${CARE_LEVEL_BADGE[p.careLevel] ?? "badge-gray"}`}>
+                                      {p.careLevel}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>{p.age}歳　{p.diagnosis}</p>
+                                {p.nurseInCharge && (
+                                  <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>担当：{p.nurseInCharge}</p>
+                                )}
+                              </div>
+                              <ChevronRight size={20} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" />
+                            </Link>
+                            <button
+                              onClick={() => handleDelete(p.id, p.name)}
+                              className="btn-delete mr-2"
+                              aria-label="削除"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </main>
     </div>

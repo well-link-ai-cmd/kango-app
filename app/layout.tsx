@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI訪問看護記録アシスト",
+  title: "AI訪問看護記録アシスト | Well-Link AI",
   description: "訪問看護のSOAP記録をAIがサポートします",
 };
 
@@ -27,6 +27,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        {/* Well-Link AI Background Effects */}
+        <div className="app-bg-grid" />
+        <div className="app-bg-glow app-bg-glow-1" />
+        <div className="app-bg-glow app-bg-glow-2" />
         {children}
       </body>
     </html>

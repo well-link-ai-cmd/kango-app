@@ -2,36 +2,79 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getPatients, saveRecord, generateId, type Patient } from "@/lib/storage";
-import { ArrowLeft, Sparkles, Save } from "lucide-react";
+import { getPatients, getRecords, saveRecord, generateId, type Patient, type SoapRecord } from "@/lib/storage";
+import { ArrowLeft, Sparkles, Save, AlertTriangle, MessageSquare, Check } from "lucide-react";
 import Link from "next/link";
 
-interface Soap {
-  S: string;
-  O: string;
-  A: string;
-  P: string;
-}
+interface Soap { S: string; O: string; A: string; P: string; }
+interface QuestionAnswer { question: string; answer: string; }
+
+type Step = "input" | "questions" | "soap";
 
 export default function NewRecordPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+
   const [patient, setPatient] = useState<Patient | null>(null);
+  const [recentRecords, setRecentRecords] = useState<SoapRecord[]>([]);
+
   const [visitDate, setVisitDate] = useState(new Date().toISOString().slice(0, 10));
   const [rawInput, setRawInput] = useState("");
+
+  const [alerts, setAlerts] = useState<string[]>([]);
+  const [alertAnswers, setAlertAnswers] = useState<QuestionAnswer[]>([]);
+  const [questionAnswers, setQuestionAnswers] = useState<QuestionAnswer[]>([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+
   const [soap, setSoap] = useState<Soap>({ S: "", O: "", A: "", P: "" });
-  const [loading, setLoading] = useState(false);
+  const [loadingSoap, setLoadingSoap] = useState(false);
+
+  const [step, setStep] = useState<Step>("input");
   const [error, setError] = useState("");
 
   useEffect(() => {
     const p = getPatients().find((p) => p.id === id) ?? null;
     setPatient(p);
+    const records = getRecords(id).sort((a, b) => b.visitDate.localeCompare(a.visitDate));
+    setRecentRecords(records.slice(0, 3));
   }, [id]);
 
-  async function handleGenerate() {
-    if (!rawInput.trim()) return alert("訪問内容を入力してください");
+  async function handleFetchQuestions() {
+    if (!rawInput.trim()) { alert("訪問内容を入力してください"); return; }
     if (!patient) return;
-    setLoading(true);
+    setLoadingQuestions(true);
+    setError("");
+    try {
+      const res = await fetch("/api/soap/questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rawInput,
+          previousRecords: recentRecords,
+          age: patient.age,
+          careLevel: patient.careLevel,
+          diagnosis: patient.diagnosis,
+          carePlan: patient.carePlan,
+          initialSoapRecords: recentRecords.length === 0 ? patient.initialSoapRecords : undefined,
+        }),
+      });
+      const data = await res.json();
+      const fetchedAlerts: string[] = data.alerts ?? [];
+      setAlerts(fetchedAlerts);
+      setAlertAnswers(fetchedAlerts.map((a: string) => ({ question: a, answer: "" })));
+      const qs: QuestionAnswer[] = (data.questions ?? []).map((q: string) => ({ question: q, answer: "" }));
+      setQuestionAnswers(qs);
+      setStep("questions");
+    } catch {
+      setError("確認事項の取得に失敗しました。");
+    } finally {
+      setLoadingQuestions(false);
+    }
+  }
+
+  async function handleGenerateSoap() {
+    if (!patient) return;
+    setLoadingSoap(true);
     setError("");
     try {
       const res = await fetch("/api/soap", {
@@ -43,6 +86,10 @@ export default function NewRecordPage() {
           careLevel: patient.careLevel,
           diagnosis: patient.diagnosis,
           carePlan: patient.carePlan,
+          previousRecords: recentRecords,
+          alertAnswers,
+          questionAnswers,
+          initialSoapRecords: recentRecords.length === 0 ? patient?.initialSoapRecords : undefined,
         }),
       });
       if (!res.ok) {
@@ -51,15 +98,48 @@ export default function NewRecordPage() {
       }
       const data: Soap = await res.json();
       setSoap(data);
+      setStep("soap");
     } catch (e) {
       setError(e instanceof Error ? e.message : "エラーが発生しました");
     } finally {
-      setLoading(false);
+      setLoadingSoap(false);
+    }
+  }
+
+  async function handleDirectGenerate() {
+    if (!rawInput.trim()) { alert("訪問内容を入力してください"); return; }
+    if (!patient) return;
+    setLoadingSoap(true);
+    setError("");
+    try {
+      const res = await fetch("/api/soap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rawInput,
+          age: patient.age,
+          careLevel: patient.careLevel,
+          diagnosis: patient.diagnosis,
+          carePlan: patient.carePlan,
+          initialSoapRecords: patient.initialSoapRecords,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error ?? "エラーが発生しました");
+      }
+      const data: Soap = await res.json();
+      setSoap(data);
+      setStep("soap");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "エラーが発生しました");
+    } finally {
+      setLoadingSoap(false);
     }
   }
 
   function handleSave() {
-    if (!soap.S && !soap.O) return alert("先にAI変換を行ってください");
+    if (!soap.S && !soap.O) { alert("先にSOAP生成を行ってください"); return; }
     saveRecord({
       id: generateId(),
       patientId: id,
@@ -74,86 +154,234 @@ export default function NewRecordPage() {
     router.push(`/patients/${id}`);
   }
 
+  const steps: { key: Step; label: string }[] = [
+    { key: "input", label: "入力" },
+    { key: "questions", label: "確認" },
+    { key: "soap", label: "保存" },
+  ];
+
+  function getStepState(s: Step): "active" | "completed" | "inactive" {
+    const order: Step[] = ["input", "questions", "soap"];
+    const currentIdx = order.indexOf(step);
+    const sIdx = order.indexOf(s);
+    if (s === step) return "active";
+    if (sIdx < currentIdx) return "completed";
+    return "inactive";
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-10">
-      <header className="bg-blue-700 text-white px-4 py-4 shadow">
-        <div className="max-w-2xl mx-auto flex items-center gap-3">
-          <Link href={`/patients/${id}`} className="text-blue-200 hover:text-white">
+    <div className="min-h-screen relative z-[1] pb-10">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <button
+            onClick={() => step === "input" ? router.push(`/patients/${id}`) : setStep(step === "soap" ? "questions" : "input")}
+            className="header-back"
+            aria-label="戻る"
+          >
             <ArrowLeft size={22} />
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold">訪問記録を作成</h1>
-            {patient && <p className="text-blue-200 text-sm">{patient.name} 様</p>}
+          </button>
+          <div className="flex-1">
+            <h1>訪問記録を作成</h1>
+            {patient && <p className="subtitle">{patient.name} 様</p>}
+          </div>
+        </div>
+        {/* Step Indicator */}
+        <div className="max-w-2xl mx-auto px-4 pb-3">
+          <div className="step-indicator">
+            {steps.map((s, i) => {
+              const state = getStepState(s.key);
+              return (
+                <div key={s.key} className="flex items-center gap-1">
+                  <div className={`step-dot ${
+                    state === "active" ? "step-dot-active" :
+                    state === "completed" ? "step-dot-completed" :
+                    "step-dot-inactive"
+                  }`}>
+                    {state === "completed" ? <Check size={14} /> : i + 1}
+                  </div>
+                  <span className="text-xs ml-1 hidden sm:inline" style={{
+                    color: state === "active" ? "var(--accent-cyan)" :
+                           state === "completed" ? "var(--accent-cyan)" :
+                           "var(--text-muted)"
+                  }}>{s.label}</span>
+                  {i < steps.length - 1 && (
+                    <div className={`step-connector ml-2 ${
+                      state === "completed" || state === "active" ? "step-connector-active" : "step-connector-inactive"
+                    }`} />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-5">
-        {/* 訪問日 */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">訪問日</label>
-          <input
-            type="date"
-            className="w-full border border-gray-300 rounded-lg px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-            value={visitDate}
-            onChange={(e) => setVisitDate(e.target.value)}
-          />
-        </div>
+      <main className="max-w-2xl mx-auto px-4 py-6 space-y-5 relative z-[1]">
+        {error && <div className="alert-error animate-fade-in">{error}</div>}
 
-        {/* 訪問内容入力 */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
-            訪問内容を話し言葉で入力
-          </label>
-          <p className="text-xs text-gray-400 mb-3">
-            バイタル・症状・処置・会話など、気になったことを自由に入力してください
-          </p>
-          <textarea
-            rows={6}
-            className="w-full border border-gray-300 rounded-lg px-4 py-3 text-base leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
-            placeholder="例：血圧168/92でいつもより高め。本人は頭痛なし、めまいもないと言っている。足首に軽度の浮腫あり。昨日より少し良くなっている。右踵の褥瘡処置実施、滲出液少量、感染兆候なし。食欲は普通。"
-            value={rawInput}
-            onChange={(e) => setRawInput(e.target.value)}
-          />
-          <button
-            onClick={handleGenerate}
-            disabled={loading}
-            className="mt-3 w-full flex items-center justify-center gap-2 bg-blue-600 text-white font-bold py-4 rounded-xl text-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow"
-          >
-            <Sparkles size={20} />
-            {loading ? "AI変換中..." : "AIでSOAPに変換"}
-          </button>
-          {error && (
-            <p className="mt-2 text-red-500 text-sm bg-red-50 rounded-lg p-3">{error}</p>
-          )}
-        </div>
+        {/* ===== STEP 1: Input ===== */}
+        {step === "input" && (
+          <div className="space-y-4 animate-fade-in-up">
+            {/* Previous P alert */}
+            {recentRecords.length > 0 && recentRecords[0].P && (
+              <div className="alert-warning">
+                <div className="flex items-center gap-2 font-semibold text-sm mb-2" style={{ color: "#CC8800" }}>
+                  <AlertTriangle size={16} />
+                  前回（{recentRecords[0].visitDate}）のプラン
+                </div>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text-secondary)" }}>{recentRecords[0].P}</p>
+              </div>
+            )}
 
-        {/* SOAP表示・編集 */}
-        {(soap.S || soap.O) && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-700">SOAP記録（修正可能）</h2>
+            {/* Visit Date */}
+            <div className="card p-5">
+              <label className="input-label">訪問日</label>
+              <input
+                type="date"
+                className="input-field text-lg"
+                value={visitDate}
+                onChange={(e) => setVisitDate(e.target.value)}
+              />
+            </div>
+
+            {/* Input Area */}
+            <div className="card p-5">
+              <label className="input-label">訪問内容を話し言葉で入力</label>
+              <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+                バイタル・症状・処置・会話など、気になったことを自由に入力してください
+              </p>
+              <textarea
+                rows={6}
+                className="input-field text-base"
+                style={{ resize: "none", lineHeight: "1.8" }}
+                placeholder="例：血圧168/92でいつもより高め。本人は頭痛なし、めまいもないと言っている。足首に軽度の浮腫あり。右踵の褥瘡処置実施、滲出液少量、感染兆候なし。食欲は普通。"
+                value={rawInput}
+                onChange={(e) => setRawInput(e.target.value)}
+              />
+
+              {(recentRecords.length > 0 || (patient?.initialSoapRecords && patient.initialSoapRecords.length > 0)) ? (
+                <button
+                  onClick={handleFetchQuestions}
+                  disabled={loadingQuestions}
+                  className="btn-primary mt-4"
+                >
+                  <MessageSquare size={20} />
+                  {loadingQuestions ? "確認事項を確認中..." : "AIに確認事項を聞く"}
+                </button>
+              ) : (
+                <button
+                  onClick={handleDirectGenerate}
+                  disabled={loadingSoap}
+                  className="btn-primary mt-4"
+                >
+                  <Sparkles size={20} />
+                  {loadingSoap ? "AI変換中..." : "AIでSOAPに変換"}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ===== STEP 2: Questions ===== */}
+        {step === "questions" && (
+          <div className="space-y-4 animate-fade-in-up">
+            {/* Alert answers */}
+            {alertAnswers.length > 0 && (
+              <div className="alert-danger">
+                <div className="flex items-center gap-2 font-semibold text-sm mb-3" style={{ color: "var(--accent-error)" }}>
+                  <AlertTriangle size={16} />
+                  前回からの継続確認事項（回答してください）
+                </div>
+                <div className="space-y-3">
+                  {alertAnswers.map((aa, i) => (
+                    <div key={i}>
+                      <p className="text-sm mb-1 flex gap-2" style={{ color: "#CC3333" }}>
+                        <span className="mt-0.5 shrink-0" style={{ color: "var(--accent-error)", opacity: 0.6 }}>!</span>
+                        <span>{aa.question}</span>
+                      </p>
+                      <textarea
+                        rows={2}
+                        className="input-field text-sm"
+                        style={{ resize: "none", borderColor: "rgba(255,68,68,0.2)" }}
+                        placeholder="確認結果を入力（スキップする場合は空欄のまま）"
+                        value={aa.answer}
+                        onChange={(e) => {
+                          const updated = [...alertAnswers];
+                          updated[i] = { ...aa, answer: e.target.value };
+                          setAlertAnswers(updated);
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI Questions */}
+            {questionAnswers.length > 0 && (
+              <div className="card p-5">
+                <h2 className="text-sm font-semibold mb-4 flex items-center gap-2" style={{ color: "var(--text-secondary)" }}>
+                  <MessageSquare size={16} style={{ color: "var(--accent-cyan)" }} />
+                  AIからの確認質問（回答で記録が充実します）
+                </h2>
+                <div className="space-y-4">
+                  {questionAnswers.map((qa, i) => (
+                    <div key={i}>
+                      <label className="block text-sm font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
+                        Q{i + 1}. {qa.question}
+                      </label>
+                      <textarea
+                        rows={2}
+                        className="input-field text-sm"
+                        style={{ resize: "none" }}
+                        placeholder="回答を入力（スキップする場合は空欄のまま）"
+                        value={qa.answer}
+                        onChange={(e) => {
+                          const updated = [...questionAnswers];
+                          updated[i] = { ...qa, answer: e.target.value };
+                          setQuestionAnswers(updated);
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={handleGenerateSoap}
+              disabled={loadingSoap}
+              className="btn-primary"
+            >
+              <Sparkles size={20} />
+              {loadingSoap ? "SOAP生成中..." : "SOAPを生成する"}
+            </button>
+          </div>
+        )}
+
+        {/* ===== STEP 3: SOAP Confirm & Save ===== */}
+        {step === "soap" && (
+          <div className="card p-5 space-y-4 animate-fade-in-up">
+            <h2 className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>SOAP記録（修正可能）</h2>
             {[
-              { key: "S" as const, label: "S（主観的情報）", color: "border-blue-400", placeholder: "利用者・家族の訴え、主観的な情報" },
-              { key: "O" as const, label: "O（客観的情報）", color: "border-green-400", placeholder: "バイタル、観察所見、処置内容など" },
-              { key: "A" as const, label: "A（アセスメント）", color: "border-yellow-400", placeholder: "状態の評価・判断" },
-              { key: "P" as const, label: "P（プラン）", color: "border-purple-400", placeholder: "今後の対応・継続ケアの方針" },
-            ].map(({ key, label, color, placeholder }) => (
-              <div key={key} className={`border-l-4 ${color} pl-4`}>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">{label}</label>
+              { key: "S" as const, label: "S（主観的情報）", cls: "soap-s", placeholder: "利用者・家族の訴え" },
+              { key: "O" as const, label: "O（客観的情報）", cls: "soap-o", placeholder: "バイタル、観察所見、処置内容" },
+              { key: "A" as const, label: "A（アセスメント）", cls: "soap-a", placeholder: "状態の評価・判断" },
+              { key: "P" as const, label: "P（プラン）", cls: "soap-p", placeholder: "今後の対応・継続ケアの方針" },
+            ].map(({ key, label, cls, placeholder }) => (
+              <div key={key} className={`soap-section ${cls} py-2`}>
+                <label className="block text-xs font-semibold mb-1" style={{ color: "var(--text-muted)" }}>{label}</label>
                 <textarea
                   rows={3}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none"
+                  className="input-field text-sm"
+                  style={{ resize: "none", background: "transparent", border: "1px solid rgba(0,0,0,0.06)" }}
                   placeholder={placeholder}
                   value={soap[key]}
                   onChange={(e) => setSoap({ ...soap, [key]: e.target.value })}
                 />
               </div>
             ))}
-
-            <button
-              onClick={handleSave}
-              className="w-full flex items-center justify-center gap-2 bg-green-600 text-white font-bold py-4 rounded-xl text-lg hover:bg-green-700 transition shadow"
-            >
+            <button onClick={handleSave} className="btn-save">
               <Save size={20} />
               記録を保存する
             </button>
