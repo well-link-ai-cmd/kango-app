@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import AuthGate from "@/components/AuthGate";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,7 +32,7 @@ export default function RootLayout({
         <div className="app-bg-grid" />
         <div className="app-bg-glow app-bg-glow-1" />
         <div className="app-bg-glow app-bg-glow-2" />
-        {children}
+        <AuthGate>{children}</AuthGate>
       </body>
     </html>
   );
