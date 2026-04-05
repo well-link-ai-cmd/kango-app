@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { getPatients, deletePatient, type Patient } from "@/lib/storage";
-import { UserPlus, FileText, Trash2, ChevronRight, Search } from "lucide-react";
+import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, type Patient } from "@/lib/storage";
+import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone } from "lucide-react";
 
 const CARE_LEVEL_BADGE: Record<string, string> = {
   "要支援1": "badge-green",
@@ -43,14 +43,59 @@ export default function PatientsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
 
+  // モーダル
+  const [infoPatient, setInfoPatient] = useState<Patient | null>(null);
+  const [appointPatient, setAppointPatient] = useState<Patient | null>(null);
+  const [appointLoading, setAppointLoading] = useState(false);
+  const [appointData, setAppointData] = useState<{
+    appointments: { date: string; type: string; detail: string; source: string }[];
+    notes?: string;
+  } | null>(null);
+  const [appointError, setAppointError] = useState("");
+
   useEffect(() => {
-    setPatients(getPatients());
+    (async () => {
+      await migrateLocalStorageToSupabase();
+      setPatients(await getPatients());
+    })();
   }, []);
 
-  function handleDelete(id: string, name: string) {
+  async function handleDelete(id: string, name: string) {
     if (!confirm(`${name} 様の情報と全記録を削除しますか？`)) return;
-    deletePatient(id);
-    setPatients(getPatients());
+    await deletePatient(id);
+    setPatients(await getPatients());
+  }
+
+  async function handleOpenAppointments(patient: Patient) {
+    setAppointPatient(patient);
+    setAppointData(null);
+    setAppointError("");
+    setAppointLoading(true);
+    const records = (await getRecords(patient.id)).sort((a, b) => b.visitDate.localeCompare(a.visitDate));
+    if (records.length === 0) {
+      setAppointError("記録がありません");
+      setAppointLoading(false);
+      return;
+    }
+    try {
+      const res = await fetch("/api/nursing-contents/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          records: records.slice(0, 5).map((r) => ({
+            visitDate: r.visitDate, S: r.S, O: r.O, A: r.A, P: r.P,
+          })),
+          diagnosis: patient.diagnosis,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setAppointData(data);
+    } catch (e) {
+      setAppointError(e instanceof Error ? e.message : "AI処理に失敗しました");
+    } finally {
+      setAppointLoading(false);
+    }
   }
 
   // 検索フィルタ
@@ -191,36 +236,53 @@ export default function PatientsPage() {
                     <ul className="space-y-2">
                       {groupPatients.map((p) => (
                         <li key={p.id} className="card card-interactive overflow-hidden">
-                          <div className="flex items-center">
-                            <Link
-                              href={`/patients/${p.id}`}
-                              className="flex-1 flex items-center gap-4 px-5 py-4 transition-colors"
-                            >
-                              <div className="avatar">
-                                {p.name.charAt(0)}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-semibold text-lg" style={{ color: "var(--text-primary)" }}>{p.name} 様</span>
-                                  {p.careLevel !== "なし" && (
-                                    <span className={`badge ${CARE_LEVEL_BADGE[p.careLevel] ?? "badge-gray"}`}>
-                                      {p.careLevel}
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>{p.age}歳　{p.diagnosis}</p>
-                                {p.nurseInCharge && (
-                                  <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>担当：{p.nurseInCharge}</p>
+                          <Link
+                            href={`/patients/${p.id}`}
+                            className="flex items-center gap-4 px-5 py-4 transition-colors"
+                          >
+                            <div className="avatar">
+                              {p.name.charAt(0)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-lg" style={{ color: "var(--text-primary)" }}>{p.name} 様</span>
+                                {p.careLevel !== "なし" && (
+                                  <span className={`badge ${CARE_LEVEL_BADGE[p.careLevel] ?? "badge-gray"}`}>
+                                    {p.careLevel}
+                                  </span>
                                 )}
                               </div>
-                              <ChevronRight size={20} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" />
+                              <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>{p.age}歳　{p.diagnosis}</p>
+                              {p.nurseInCharge && (
+                                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>担当：{p.nurseInCharge}</p>
+                              )}
+                            </div>
+                            <ChevronRight size={20} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" />
+                          </Link>
+                          {/* クイックアクションボタン */}
+                          <div
+                            className="flex items-center gap-2 px-5 pb-3"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Link href={`/patients/${p.id}/nursing-contents`} className="btn-quick">
+                              <ClipboardList size={13} />
+                              看護内容
                             </Link>
+                            <button onClick={() => setInfoPatient(p)} className="btn-quick">
+                              <User size={13} />
+                              基本情報
+                            </button>
+                            <button onClick={() => handleOpenAppointments(p)} className="btn-quick">
+                              <Calendar size={13} />
+                              受診予定
+                            </button>
+                            <div className="flex-1" />
                             <button
                               onClick={() => handleDelete(p.id, p.name)}
-                              className="btn-delete mr-2"
+                              className="btn-delete"
                               aria-label="削除"
                             >
-                              <Trash2 size={18} />
+                              <Trash2 size={16} />
                             </button>
                           </div>
                         </li>
@@ -233,6 +295,140 @@ export default function PatientsPage() {
           </div>
         )}
       </main>
+
+      {/* 基本情報モーダル */}
+      {infoPatient && (
+        <div className="modal-overlay" onClick={() => setInfoPatient(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-handle" />
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-lg" style={{ color: "var(--text-primary)" }}>
+                {infoPatient.name} 様の基本情報
+              </h2>
+              <button onClick={() => setInfoPatient(null)} className="btn-delete">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              {/* 利用者情報 */}
+              <div className="space-y-1">
+                <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>利用者情報</p>
+                <p className="text-sm"><span style={{ color: "var(--text-muted)" }}>年齢：</span>{infoPatient.age}歳</p>
+                <p className="text-sm"><span style={{ color: "var(--text-muted)" }}>介護度：</span>{infoPatient.careLevel}</p>
+                <p className="text-sm"><span style={{ color: "var(--text-muted)" }}>主病名：</span>{infoPatient.diagnosis}</p>
+                {infoPatient.nurseInCharge && (
+                  <p className="text-sm"><span style={{ color: "var(--text-muted)" }}>担当：</span>{infoPatient.nurseInCharge}</p>
+                )}
+              </div>
+
+              {/* 主治医（複数対応） */}
+              {infoPatient.doctors && infoPatient.doctors.length > 0 && (
+                infoPatient.doctors.map((doc, i) => (
+                  <div key={i} className="space-y-1 p-3 rounded-lg" style={{ background: "var(--bg-tertiary)" }}>
+                    <p className="text-xs font-semibold" style={{ color: "var(--accent-cyan)" }}>主治医{infoPatient.doctors!.length > 1 ? ` ${i + 1}` : ""}</p>
+                    {doc.name && <p className="text-sm font-medium">{doc.name}</p>}
+                    {doc.hospital && <p className="text-sm">{doc.hospital}</p>}
+                    {doc.address && <p className="text-xs" style={{ color: "var(--text-muted)" }}>{doc.address}</p>}
+                    {doc.phone && (
+                      <a href={`tel:${doc.phone}`} className="inline-flex items-center gap-1 text-sm mt-1" style={{ color: "var(--accent-blue)" }}>
+                        <Phone size={14} /> {doc.phone}
+                      </a>
+                    )}
+                  </div>
+                ))
+              )}
+
+              {/* ケアマネ（複数対応） */}
+              {infoPatient.careManagers && infoPatient.careManagers.length > 0 && (
+                infoPatient.careManagers.map((cm, i) => (
+                  <div key={i} className="space-y-1 p-3 rounded-lg" style={{ background: "var(--bg-tertiary)" }}>
+                    <p className="text-xs font-semibold" style={{ color: "var(--accent-magenta)" }}>ケアマネ{infoPatient.careManagers!.length > 1 ? ` ${i + 1}` : ""}</p>
+                    {cm.name && <p className="text-sm font-medium">{cm.name}</p>}
+                    {cm.office && <p className="text-sm">{cm.office}</p>}
+                    {cm.address && <p className="text-xs" style={{ color: "var(--text-muted)" }}>{cm.address}</p>}
+                    {cm.phone && (
+                      <a href={`tel:${cm.phone}`} className="inline-flex items-center gap-1 text-sm mt-1" style={{ color: "var(--accent-blue)" }}>
+                        <Phone size={14} /> {cm.phone}
+                      </a>
+                    )}
+                  </div>
+                ))
+              )}
+
+              {(!infoPatient.doctors || infoPatient.doctors.length === 0) && (!infoPatient.careManagers || infoPatient.careManagers.length === 0) && (
+                <p className="text-sm text-center py-4" style={{ color: "var(--text-muted)" }}>
+                  主治医・ケアマネ情報が未登録です。編集ページから登録できます。
+                </p>
+              )}
+
+              <Link
+                href={`/patients/${infoPatient.id}/edit`}
+                className="btn-outline w-full justify-center"
+                onClick={() => setInfoPatient(null)}
+              >
+                編集する
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 受診予定モーダル */}
+      {appointPatient && (
+        <div className="modal-overlay" onClick={() => { setAppointPatient(null); setAppointData(null); }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-handle" />
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-lg" style={{ color: "var(--text-primary)" }}>
+                {appointPatient.name} 様の受診予定
+              </h2>
+              <button onClick={() => { setAppointPatient(null); setAppointData(null); }} className="btn-delete">
+                <X size={20} />
+              </button>
+            </div>
+
+            {appointLoading && (
+              <div className="text-center py-8">
+                <div className="animate-spin inline-block w-6 h-6 border-2 rounded-full" style={{ borderColor: "var(--accent-cyan)", borderTopColor: "transparent" }} />
+                <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>記録からAIが受診予定を抽出中...</p>
+              </div>
+            )}
+
+            {appointError && (
+              <div className="alert-error">{appointError}</div>
+            )}
+
+            {appointData && (
+              <div className="space-y-3">
+                {appointData.appointments.length > 0 ? (
+                  appointData.appointments.map((apt, i) => (
+                    <div
+                      key={i}
+                      className="p-3 rounded-lg space-y-1"
+                      style={{ background: "var(--bg-tertiary)" }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Calendar size={14} style={{ color: "var(--accent-cyan)" }} />
+                        <span className="font-medium text-sm">{apt.date}</span>
+                        <span className="badge badge-blue">{apt.type}</span>
+                      </div>
+                      <p className="text-sm" style={{ color: "var(--text-primary)" }}>{apt.detail}</p>
+                      <p className="text-xs" style={{ color: "var(--text-muted)" }}>出典：{apt.source}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-center py-4" style={{ color: "var(--text-muted)" }}>
+                    直近の記録から受診予定は見つかりませんでした
+                  </p>
+                )}
+                {appointData.notes && (
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>{appointData.notes}</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

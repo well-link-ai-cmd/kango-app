@@ -31,17 +31,28 @@ export async function generateAiResponse(prompt: string): Promise<AiResponse> {
 
 async function generateWithGemini(apiKey: string, prompt: string): Promise<AiResponse> {
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
   const timeoutMs = 30000;
-  const result = await Promise.race([
-    model.generateContent(prompt),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("AI応答がタイムアウトしました（30秒）。再度お試しください。")), timeoutMs)
-    ),
-  ]);
-  const text = result.response.text();
-  return { text };
+  try {
+    const result = await Promise.race([
+      model.generateContent(prompt),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("AI応答がタイムアウトしました（30秒）。再度お試しください。")), timeoutMs)
+      ),
+    ]);
+    const text = result.response.text();
+    return { text };
+  } catch (e: unknown) {
+    const err = e as Error;
+    if (err.message?.includes("API_KEY") || err.message?.includes("permission")) {
+      throw new Error("Gemini APIキーが無効です。Google AI Studio でAPIキーを確認してください。");
+    }
+    if (err.message?.includes("not found") || err.message?.includes("model")) {
+      throw new Error("Geminiモデルが利用できません。APIキーの無料枠を確認してください。");
+    }
+    throw e;
+  }
 }
 
 async function generateWithClaude(apiKey: string, prompt: string): Promise<AiResponse> {

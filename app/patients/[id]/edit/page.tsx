@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getPatients, savePatient, type CareLevel } from "@/lib/storage";
-import { ArrowLeft, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { getPatients, savePatient, type CareLevel, type DoctorInfo, type CareManagerInfo } from "@/lib/storage";
+import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 const CARE_LEVELS: CareLevel[] = [
@@ -30,6 +30,10 @@ export default function EditPatientPage() {
   const [careLevel, setCareLevel] = useState<CareLevel>("なし");
   const [diagnosis, setDiagnosis] = useState("");
   const [nurseInCharge, setNurseInCharge] = useState("");
+  const [doctors, setDoctors] = useState<DoctorInfo[]>([]);
+  const [careManagersList, setCareManagersList] = useState<CareManagerInfo[]>([]);
+  const [openDoctor, setOpenDoctor] = useState(false);
+  const [openCareManager, setOpenCareManager] = useState(false);
   const [carePlan, setCarePlan] = useState("");
   const [openCarePlan, setOpenCarePlan] = useState(false);
   const [openInitialSoap, setOpenInitialSoap] = useState(false);
@@ -38,7 +42,8 @@ export default function EditPatientPage() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    const patient = getPatients().find((p) => p.id === id);
+    (async () => {
+    const patient = (await getPatients()).find((p) => p.id === id);
     if (patient) {
       setName(patient.name);
       setNameKana(patient.nameKana ?? "");
@@ -46,6 +51,14 @@ export default function EditPatientPage() {
       setCareLevel(patient.careLevel);
       setDiagnosis(patient.diagnosis);
       setNurseInCharge(patient.nurseInCharge ?? "");
+      if (patient.doctors && patient.doctors.length > 0) {
+        setDoctors(patient.doctors);
+        setOpenDoctor(true);
+      }
+      if (patient.careManagers && patient.careManagers.length > 0) {
+        setCareManagersList(patient.careManagers);
+        setOpenCareManager(true);
+      }
       setCarePlan(patient.carePlan ?? "");
       if (patient.carePlan) setOpenCarePlan(true);
       // 初期SOAP記録を読み込み
@@ -58,18 +71,21 @@ export default function EditPatientPage() {
       }
     }
     setLoaded(true);
+    })();
   }, [id]);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return alert("氏名を入力してください");
-    const existing = getPatients().find((p) => p.id === id);
+    const existing = (await getPatients()).find((p) => p.id === id);
     if (!existing) return;
 
     const initialSoapRecords = [initialSoap1, initialSoap2]
       .filter(s => s.S.trim() || s.O.trim() || s.A.trim() || s.P.trim());
 
-    savePatient({
+    const validDoctors = doctors.filter(d => d.name.trim() || d.hospital.trim());
+    const validCMs = careManagersList.filter(c => c.name.trim() || c.office.trim());
+    await savePatient({
       ...existing,
       name: name.trim(),
       nameKana: nameKana.trim() || undefined,
@@ -77,6 +93,8 @@ export default function EditPatientPage() {
       careLevel,
       diagnosis: diagnosis.trim(),
       nurseInCharge: nurseInCharge.trim() || undefined,
+      doctors: validDoctors.length > 0 ? validDoctors : undefined,
+      careManagers: validCMs.length > 0 ? validCMs : undefined,
       carePlan: carePlan.trim() || undefined,
       initialSoapRecords: initialSoapRecords.length > 0 ? initialSoapRecords : undefined,
     });
@@ -194,6 +212,82 @@ export default function EditPatientPage() {
                 onChange={(e) => setNurseInCharge(e.target.value)}
               />
             </div>
+          </div>
+
+          {/* 主治医・かかりつけ病院（複数対応） */}
+          <div className="card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => { setOpenDoctor(!openDoctor); if (doctors.length === 0) setDoctors([{ name: "", hospital: "" }]); }}
+              className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-[rgba(0,200,200,0.02)]"
+            >
+              <div className="text-left">
+                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>主治医・かかりつけ病院{doctors.length > 0 ? `（${doctors.length}件）` : ""}</p>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>複数登録できます（任意）</p>
+              </div>
+              {openDoctor
+                ? <ChevronUp size={18} style={{ color: "var(--text-muted)" }} />
+                : <ChevronDown size={18} style={{ color: "var(--text-muted)" }} />}
+            </button>
+            {openDoctor && (
+              <div className="px-5 pb-5 space-y-4 animate-fade-in">
+                {doctors.map((doc, i) => (
+                  <div key={i} className="space-y-2 p-4 rounded-xl relative" style={{ background: "var(--bg-tertiary)" }}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold" style={{ color: "var(--accent-cyan)" }}>主治医 {i + 1}</span>
+                      {doctors.length > 1 && (
+                        <button type="button" onClick={() => setDoctors(doctors.filter((_, j) => j !== i))} className="btn-delete"><Trash2 size={14} /></button>
+                      )}
+                    </div>
+                    <input type="text" className="input-field text-sm" placeholder="主治医名" value={doc.name} onChange={(e) => { const d = [...doctors]; d[i] = { ...d[i], name: e.target.value }; setDoctors(d); }} />
+                    <input type="text" className="input-field text-sm" placeholder="病院名" value={doc.hospital} onChange={(e) => { const d = [...doctors]; d[i] = { ...d[i], hospital: e.target.value }; setDoctors(d); }} />
+                    <input type="text" className="input-field text-sm" placeholder="住所（任意）" value={doc.address ?? ""} onChange={(e) => { const d = [...doctors]; d[i] = { ...d[i], address: e.target.value }; setDoctors(d); }} />
+                    <input type="tel" className="input-field text-sm" placeholder="電話番号（任意）" value={doc.phone ?? ""} onChange={(e) => { const d = [...doctors]; d[i] = { ...d[i], phone: e.target.value }; setDoctors(d); }} />
+                  </div>
+                ))}
+                <button type="button" onClick={() => setDoctors([...doctors, { name: "", hospital: "" }])} className="btn-outline w-full justify-center">
+                  <Plus size={16} /> もう1件追加
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* ケアマネージャー（複数対応） */}
+          <div className="card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => { setOpenCareManager(!openCareManager); if (careManagersList.length === 0) setCareManagersList([{ name: "", office: "" }]); }}
+              className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-[rgba(0,200,200,0.02)]"
+            >
+              <div className="text-left">
+                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>ケアマネージャー{careManagersList.length > 0 ? `（${careManagersList.length}件）` : ""}</p>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>複数登録できます（任意）</p>
+              </div>
+              {openCareManager
+                ? <ChevronUp size={18} style={{ color: "var(--text-muted)" }} />
+                : <ChevronDown size={18} style={{ color: "var(--text-muted)" }} />}
+            </button>
+            {openCareManager && (
+              <div className="px-5 pb-5 space-y-4 animate-fade-in">
+                {careManagersList.map((cm, i) => (
+                  <div key={i} className="space-y-2 p-4 rounded-xl relative" style={{ background: "var(--bg-tertiary)" }}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold" style={{ color: "var(--accent-magenta)" }}>ケアマネ {i + 1}</span>
+                      {careManagersList.length > 1 && (
+                        <button type="button" onClick={() => setCareManagersList(careManagersList.filter((_, j) => j !== i))} className="btn-delete"><Trash2 size={14} /></button>
+                      )}
+                    </div>
+                    <input type="text" className="input-field text-sm" placeholder="ケアマネ名" value={cm.name} onChange={(e) => { const c = [...careManagersList]; c[i] = { ...c[i], name: e.target.value }; setCareManagersList(c); }} />
+                    <input type="text" className="input-field text-sm" placeholder="事業所名" value={cm.office} onChange={(e) => { const c = [...careManagersList]; c[i] = { ...c[i], office: e.target.value }; setCareManagersList(c); }} />
+                    <input type="text" className="input-field text-sm" placeholder="住所（任意）" value={cm.address ?? ""} onChange={(e) => { const c = [...careManagersList]; c[i] = { ...c[i], address: e.target.value }; setCareManagersList(c); }} />
+                    <input type="tel" className="input-field text-sm" placeholder="電話番号（任意）" value={cm.phone ?? ""} onChange={(e) => { const c = [...careManagersList]; c[i] = { ...c[i], phone: e.target.value }; setCareManagersList(c); }} />
+                  </div>
+                ))}
+                <button type="button" onClick={() => setCareManagersList([...careManagersList, { name: "", office: "" }])} className="btn-outline w-full justify-center">
+                  <Plus size={16} /> もう1件追加
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Care Plan */}

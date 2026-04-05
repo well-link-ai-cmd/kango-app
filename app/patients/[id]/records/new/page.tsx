@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getPatients, getRecords, saveRecord, generateId, type Patient, type SoapRecord } from "@/lib/storage";
+import { getPatients, getRecords, saveRecord, generateId, soapToText, textToSoap, type Patient, type SoapRecord } from "@/lib/storage";
 import { ArrowLeft, Sparkles, Save, AlertTriangle, MessageSquare, Check } from "lucide-react";
 import Link from "next/link";
 
@@ -27,16 +27,19 @@ export default function NewRecordPage() {
   const [loadingQuestions, setLoadingQuestions] = useState(false);
 
   const [soap, setSoap] = useState<Soap>({ S: "", O: "", A: "", P: "" });
+  const [soapText, setSoapText] = useState("");
   const [loadingSoap, setLoadingSoap] = useState(false);
 
   const [step, setStep] = useState<Step>("input");
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const p = getPatients().find((p) => p.id === id) ?? null;
-    setPatient(p);
-    const records = getRecords(id).sort((a, b) => b.visitDate.localeCompare(a.visitDate));
-    setRecentRecords(records.slice(0, 3));
+    (async () => {
+      const p = (await getPatients()).find((p) => p.id === id) ?? null;
+      setPatient(p);
+      const records = await getRecords(id);
+      setRecentRecords(records.sort((a, b) => b.visitDate.localeCompare(a.visitDate)).slice(0, 3));
+    })();
   }, [id]);
 
   async function handleFetchQuestions() {
@@ -98,6 +101,7 @@ export default function NewRecordPage() {
       }
       const data: Soap = await res.json();
       setSoap(data);
+      setSoapText(soapToText(data.S, data.O, data.A, data.P));
       setStep("soap");
     } catch (e) {
       setError(e instanceof Error ? e.message : "エラーが発生しました");
@@ -130,6 +134,7 @@ export default function NewRecordPage() {
       }
       const data: Soap = await res.json();
       setSoap(data);
+      setSoapText(soapToText(data.S, data.O, data.A, data.P));
       setStep("soap");
     } catch (e) {
       setError(e instanceof Error ? e.message : "エラーが発生しました");
@@ -138,17 +143,18 @@ export default function NewRecordPage() {
     }
   }
 
-  function handleSave() {
-    if (!soap.S && !soap.O) { alert("先にSOAP生成を行ってください"); return; }
-    saveRecord({
+  async function handleSave() {
+    if (!soapText.trim()) { alert("先にSOAP生成を行ってください"); return; }
+    const parsed = textToSoap(soapText);
+    await saveRecord({
       id: generateId(),
       patientId: id,
       visitDate,
       rawInput,
-      S: soap.S,
-      O: soap.O,
-      A: soap.A,
-      P: soap.P,
+      S: parsed.S,
+      O: parsed.O,
+      A: parsed.A,
+      P: parsed.P,
       createdAt: new Date().toISOString(),
     });
     router.push(`/patients/${id}`);
@@ -363,24 +369,16 @@ export default function NewRecordPage() {
         {step === "soap" && (
           <div className="card p-5 space-y-4 animate-fade-in-up">
             <h2 className="text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>SOAP記録（修正可能）</h2>
-            {[
-              { key: "S" as const, label: "S（主観的情報）", cls: "soap-s", placeholder: "利用者・家族の訴え" },
-              { key: "O" as const, label: "O（客観的情報）", cls: "soap-o", placeholder: "バイタル、観察所見、処置内容" },
-              { key: "A" as const, label: "A（アセスメント）", cls: "soap-a", placeholder: "状態の評価・判断" },
-              { key: "P" as const, label: "P（プラン）", cls: "soap-p", placeholder: "今後の対応・継続ケアの方針" },
-            ].map(({ key, label, cls, placeholder }) => (
-              <div key={key} className={`soap-section ${cls} py-2`}>
-                <label className="block text-xs font-semibold mb-1" style={{ color: "var(--text-muted)" }}>{label}</label>
-                <textarea
-                  rows={3}
-                  className="input-field text-sm"
-                  style={{ resize: "none", background: "transparent", border: "1px solid rgba(0,0,0,0.06)" }}
-                  placeholder={placeholder}
-                  value={soap[key]}
-                  onChange={(e) => setSoap({ ...soap, [key]: e.target.value })}
-                />
-              </div>
-            ))}
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+              S: O: A: P: の行頭を残したまま、内容を自由に編集できます
+            </p>
+            <textarea
+              rows={16}
+              className="input-field text-sm"
+              style={{ resize: "vertical", lineHeight: "1.8", fontFamily: "inherit" }}
+              value={soapText}
+              onChange={(e) => setSoapText(e.target.value)}
+            />
             <button onClick={handleSave} className="btn-save">
               <Save size={20} />
               記録を保存する

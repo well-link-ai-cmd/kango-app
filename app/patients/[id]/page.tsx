@@ -4,15 +4,15 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  getPatients, getRecords, getRecordsByYearMonth, getRecordMonths,
+  getPatients, getRecordsByYearMonth, getRecordMonths, getRecords,
   deleteRecord, type Patient, type SoapRecord,
 } from "@/lib/storage";
-import { ArrowLeft, PlusCircle, Copy, Trash2, ChevronDown, ChevronUp, Pencil, FolderOpen, Folder } from "lucide-react";
+import { ArrowLeft, PlusCircle, Copy, Trash2, ChevronDown, ChevronUp, Pencil, FolderOpen, Folder, ClipboardList } from "lucide-react";
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [patient, setPatient] = useState<Patient | null>(null);
-  const [months, setMonths] = useState<{ year: number; month: number; label: string }[]>([]);
+  const [months, setMonths] = useState<{ year: number; month: number; label: string; count: number }[]>([]);
   const [openMonth, setOpenMonth] = useState<string | null>(null);
   const [monthRecords, setMonthRecords] = useState<SoapRecord[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -20,45 +20,44 @@ export default function PatientDetailPage() {
   const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
-    const p = getPatients().find((p) => p.id === id) ?? null;
-    setPatient(p);
-    const ms = getRecordMonths(id);
-    setMonths(ms);
-    setTotalCount(getRecords(id).length);
-    if (ms.length > 0) {
-      const first = ms[0];
-      const key = `${first.year}-${first.month}`;
-      setOpenMonth(key);
-      setMonthRecords(
-        getRecordsByYearMonth(id, first.year, first.month).sort((a, b) => b.visitDate.localeCompare(a.visitDate))
-      );
-    }
+    (async () => {
+      const p = (await getPatients()).find((p) => p.id === id) ?? null;
+      setPatient(p);
+      const ms = await getRecordMonths(id);
+      setMonths(ms);
+      setTotalCount(ms.reduce((sum, m) => sum + m.count, 0));
+      if (ms.length > 0) {
+        const first = ms[0];
+        const key = `${first.year}-${first.month}`;
+        setOpenMonth(key);
+        const records = await getRecordsByYearMonth(id, first.year, first.month);
+        setMonthRecords(records.sort((a, b) => b.visitDate.localeCompare(a.visitDate)));
+      }
+    })();
   }, [id]);
 
-  function toggleMonth(year: number, month: number) {
+  async function toggleMonth(year: number, month: number) {
     const key = `${year}-${month}`;
     if (openMonth === key) {
       setOpenMonth(null);
       setMonthRecords([]);
     } else {
       setOpenMonth(key);
-      setMonthRecords(
-        getRecordsByYearMonth(id, year, month).sort((a, b) => b.visitDate.localeCompare(a.visitDate))
-      );
+      const records = await getRecordsByYearMonth(id, year, month);
+      setMonthRecords(records.sort((a, b) => b.visitDate.localeCompare(a.visitDate)));
     }
   }
 
-  function handleDelete(recordId: string) {
+  async function handleDelete(recordId: string) {
     if (!confirm("この記録を削除しますか？")) return;
-    deleteRecord(recordId);
-    const ms = getRecordMonths(id);
+    await deleteRecord(recordId);
+    const ms = await getRecordMonths(id);
     setMonths(ms);
-    setTotalCount(getRecords(id).length);
+    setTotalCount(ms.reduce((sum, m) => sum + m.count, 0));
     if (openMonth) {
       const [y, m] = openMonth.split("-").map(Number);
-      setMonthRecords(
-        getRecordsByYearMonth(id, y, m).sort((a, b) => b.visitDate.localeCompare(a.visitDate))
-      );
+      const records = await getRecordsByYearMonth(id, y, m);
+      setMonthRecords(records.sort((a, b) => b.visitDate.localeCompare(a.visitDate)));
     }
   }
 
@@ -74,8 +73,8 @@ export default function PatientDetailPage() {
     setTimeout(() => setCopied(null), 2000);
   }
 
-  function handleCopyMonth(year: number, month: number) {
-    const records = getRecordsByYearMonth(id, year, month).sort((a, b) => a.visitDate.localeCompare(b.visitDate));
+  async function handleCopyMonth(year: number, month: number) {
+    const records = (await getRecordsByYearMonth(id, year, month)).sort((a, b) => a.visitDate.localeCompare(b.visitDate));
     const text = records.map(r =>
       `【訪問日】${r.visitDate}\nS: ${r.S}\nO: ${r.O}\nA: ${r.A}\nP: ${r.P}`
     ).join("\n\n---\n\n");
@@ -110,6 +109,15 @@ export default function PatientDetailPage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6 relative z-[1]">
+        {/* 看護内容リストへのショートカット */}
+        <Link
+          href={`/patients/${id}/nursing-contents`}
+          className="btn-outline w-full justify-center mb-3 animate-fade-in-up"
+        >
+          <ClipboardList size={18} />
+          看護内容リストを確認する
+        </Link>
+
         {/* New Record Button */}
         <Link
           href={`/patients/${id}/records/new`}
@@ -130,10 +138,9 @@ export default function PatientDetailPage() {
           </div>
         ) : (
           <div className="space-y-3 stagger">
-            {months.map(({ year, month, label }) => {
+            {months.map(({ year, month, label, count }) => {
               const key = `${year}-${month}`;
               const isOpen = openMonth === key;
-              const count = getRecordsByYearMonth(id, year, month).length;
               const monthKey = `month-${year}-${month}`;
 
               return (
