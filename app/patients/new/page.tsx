@@ -2,21 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { savePatient, generateId, type CareLevel, type DoctorInfo, type CareManagerInfo } from "@/lib/storage";
+import { savePatient, generateId, soapToText, textToSoap, type CareLevel, type DoctorInfo, type CareManagerInfo } from "@/lib/storage";
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 const CARE_LEVELS: CareLevel[] = [
   "なし","要支援1","要支援2","要介護1","要介護2","要介護3","要介護4","要介護5",
 ];
-
-interface InitialSoap {
-  S: string;
-  O: string;
-  A: string;
-  P: string;
-  visitDate: string;
-}
 
 export default function NewPatientPage() {
   const router = useRouter();
@@ -33,18 +25,24 @@ export default function NewPatientPage() {
   const [carePlan, setCarePlan] = useState("");
   const [openCarePlan, setOpenCarePlan] = useState(false);
 
-  // 直近のSOAP記録（導入時の初期データ）
+  // 直近のSOAP記録（導入時の初期データ）— 1つのtextareaに統合
   const [openInitialSoap, setOpenInitialSoap] = useState(false);
-  const [initialSoap1, setInitialSoap1] = useState<InitialSoap>({ S: "", O: "", A: "", P: "", visitDate: "" });
-  const [initialSoap2, setInitialSoap2] = useState<InitialSoap>({ S: "", O: "", A: "", P: "", visitDate: "" });
+  const [initialSoapText1, setInitialSoapText1] = useState("");
+  const [initialSoapDate1, setInitialSoapDate1] = useState("");
+  const [initialSoapText2, setInitialSoapText2] = useState("");
+  const [initialSoapDate2, setInitialSoapDate2] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return alert("氏名を入力してください");
 
-    // 入力があるSOAPのみ保存
-    const initialSoapRecords = [initialSoap1, initialSoap2]
-      .filter(s => s.S.trim() || s.O.trim() || s.A.trim() || s.P.trim());
+    // テキストからSOAPをパースして保存
+    const initialSoapRecords = [
+      { text: initialSoapText1, visitDate: initialSoapDate1 },
+      { text: initialSoapText2, visitDate: initialSoapDate2 },
+    ]
+      .filter(s => s.text.trim())
+      .map(s => ({ ...textToSoap(s.text), visitDate: s.visitDate }));
 
     await savePatient({
       id: generateId(),
@@ -65,7 +63,7 @@ export default function NewPatientPage() {
     router.push("/patients");
   }
 
-  function renderSoapInput(label: string, soap: InitialSoap, setSoap: (s: InitialSoap) => void) {
+  function renderSoapInput(label: string, soapText: string, setSoapText: (s: string) => void, date: string, setDate: (d: string) => void) {
     return (
       <div className="space-y-2 p-4 rounded-xl" style={{ background: "var(--bg-tertiary)" }}>
         <div className="flex items-center justify-between">
@@ -74,27 +72,19 @@ export default function NewPatientPage() {
             type="date"
             className="input-field text-xs py-1 px-2"
             style={{ width: "auto", borderRadius: "8px" }}
-            value={soap.visitDate}
-            onChange={(e) => setSoap({ ...soap, visitDate: e.target.value })}
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
             placeholder="訪問日"
           />
         </div>
-        {(["S", "O", "A", "P"] as const).map((key) => {
-          const labels = { S: "S（主観的情報）", O: "O（客観的情報）", A: "A（アセスメント）", P: "P（プラン）" };
-          return (
-            <div key={key}>
-              <label className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>{labels[key]}</label>
-              <textarea
-                rows={2}
-                className="input-field text-sm mt-1"
-                style={{ resize: "none" }}
-                placeholder={`${labels[key]}を貼り付け`}
-                value={soap[key]}
-                onChange={(e) => setSoap({ ...soap, [key]: e.target.value })}
-              />
-            </div>
-          );
-        })}
+        <textarea
+          rows={8}
+          className="input-field text-sm"
+          style={{ resize: "vertical", lineHeight: "1.8" }}
+          placeholder={"S: 利用者の言葉・訴え\nO: バイタル・観察所見\nA: アセスメント・評価\nP: 今後のケア方針"}
+          value={soapText}
+          onChange={(e) => setSoapText(e.target.value)}
+        />
       </div>
     );
   }
@@ -313,8 +303,8 @@ export default function NewPatientPage() {
                 <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                   このツール導入前に書いていた直近1〜2回分のSOAP記録を貼り付けてください。AIが初回から過去の経過を踏まえて記録を生成します。
                 </p>
-                {renderSoapInput("直近1回目のSOAP", initialSoap1, setInitialSoap1)}
-                {renderSoapInput("直近2回目のSOAP（任意）", initialSoap2, setInitialSoap2)}
+                {renderSoapInput("直近1回目のSOAP", initialSoapText1, setInitialSoapText1, initialSoapDate1, setInitialSoapDate1)}
+                {renderSoapInput("直近2回目のSOAP（任意）", initialSoapText2, setInitialSoapText2, initialSoapDate2, setInitialSoapDate2)}
               </div>
             )}
           </div>

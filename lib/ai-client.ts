@@ -15,18 +15,18 @@ interface AiResponse {
 }
 
 export async function generateAiResponse(prompt: string): Promise<AiResponse> {
-  const geminiKey = process.env.GEMINI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-
-  if (geminiKey) {
-    return generateWithGemini(geminiKey, prompt);
-  }
+  const geminiKey = process.env.GEMINI_API_KEY;
 
   if (anthropicKey) {
     return generateWithClaude(anthropicKey, prompt);
   }
 
-  throw new Error("APIキーが設定されていません。.env.local に GEMINI_API_KEY または ANTHROPIC_API_KEY を設定してください。");
+  if (geminiKey) {
+    return generateWithGemini(geminiKey, prompt);
+  }
+
+  throw new Error("APIキーが設定されていません。.env.local に ANTHROPIC_API_KEY または GEMINI_API_KEY を設定してください。");
 }
 
 async function generateWithGemini(apiKey: string, prompt: string): Promise<AiResponse> {
@@ -64,7 +64,7 @@ async function generateWithClaude(apiKey: string, prompt: string): Promise<AiRes
   const message = await Promise.race([
     client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
+      max_tokens: 4096,
       messages: [{ role: "user", content: prompt }],
     }),
     new Promise<never>((_, reject) =>
@@ -77,7 +77,7 @@ async function generateWithClaude(apiKey: string, prompt: string): Promise<AiRes
 }
 
 export function getAiProvider(): "gemini" | "claude" | "none" {
-  if (process.env.GEMINI_API_KEY) return "gemini";
   if (process.env.ANTHROPIC_API_KEY) return "claude";
+  if (process.env.GEMINI_API_KEY) return "gemini";
   return "none";
 }
