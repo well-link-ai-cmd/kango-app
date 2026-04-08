@@ -4,13 +4,16 @@
 -- Supabase ダッシュボード > SQL Editor で実行してください。
 --
 -- このマイグレーションは以下を行います：
--- 1. 全テーブルに user_id カラムを追加
+-- 1. 全テーブルに user_id カラムを追加（作成者の記録用）
 -- 2. RLS を有効化
--- 3. 認証済みユーザーが自分のデータのみアクセスできるポリシーを作成
+-- 3. 認証済みユーザーなら全データにアクセスできるポリシーを作成
+--
+-- ※ user_id は「誰が作成したか」の監査記録用です。
+--   同じ事業所のスタッフ全員が全患者データを共有できます。
 -- ============================================================
 
 -- ============================================================
--- STEP 1: user_id カラムを追加
+-- STEP 1: user_id カラムを追加（作成者の記録用・NULLable）
 -- ============================================================
 
 -- patients テーブル
@@ -26,21 +29,7 @@ ALTER TABLE nursing_contents
   ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id);
 
 -- ============================================================
--- STEP 2: 既存データに user_id を設定
---
--- ⚠ 重要: 以下の行の 'YOUR_USER_UUID' を、
---   Supabase ダッシュボード > Authentication > Users で
---   作成したユーザーの UUID に置き換えてから実行してください。
---
--- 例: UPDATE patients SET user_id = 'a1b2c3d4-e5f6-...' WHERE user_id IS NULL;
--- ============================================================
-
--- UPDATE patients SET user_id = 'YOUR_USER_UUID' WHERE user_id IS NULL;
--- UPDATE soap_records SET user_id = 'YOUR_USER_UUID' WHERE user_id IS NULL;
--- UPDATE nursing_contents SET user_id = 'YOUR_USER_UUID' WHERE user_id IS NULL;
-
--- ============================================================
--- STEP 3: RLS 有効化
+-- STEP 2: RLS 有効化
 -- ============================================================
 
 ALTER TABLE patients ENABLE ROW LEVEL SECURITY;
@@ -48,71 +37,62 @@ ALTER TABLE soap_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE nursing_contents ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
--- STEP 4: RLS ポリシー作成
--- 認証済みユーザーは自分の user_id のデータのみ操作可能
+-- STEP 3: RLS ポリシー作成
+--
+-- 認証済みユーザー（ログイン済み）であれば全データの
+-- 閲覧・作成・編集・削除が可能。
+-- 未認証（ログインしていない）アクセスは全て拒否。
+--
+-- → 同じ事業所のスタッフ全員が患者データを共有できます。
 -- ============================================================
 
 -- patients ポリシー
-CREATE POLICY "Users can view own patients"
+CREATE POLICY "Authenticated users can view all patients"
   ON patients FOR SELECT
-  USING (auth.uid() = user_id);
+  USING (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can insert own patients"
+CREATE POLICY "Authenticated users can insert patients"
   ON patients FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can update own patients"
+CREATE POLICY "Authenticated users can update patients"
   ON patients FOR UPDATE
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  USING (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can delete own patients"
+CREATE POLICY "Authenticated users can delete patients"
   ON patients FOR DELETE
-  USING (auth.uid() = user_id);
+  USING (auth.role() = 'authenticated');
 
 -- soap_records ポリシー
-CREATE POLICY "Users can view own records"
+CREATE POLICY "Authenticated users can view all records"
   ON soap_records FOR SELECT
-  USING (auth.uid() = user_id);
+  USING (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can insert own records"
+CREATE POLICY "Authenticated users can insert records"
   ON soap_records FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can update own records"
+CREATE POLICY "Authenticated users can update records"
   ON soap_records FOR UPDATE
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  USING (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can delete own records"
+CREATE POLICY "Authenticated users can delete records"
   ON soap_records FOR DELETE
-  USING (auth.uid() = user_id);
+  USING (auth.role() = 'authenticated');
 
 -- nursing_contents ポリシー
-CREATE POLICY "Users can view own nursing contents"
+CREATE POLICY "Authenticated users can view all nursing contents"
   ON nursing_contents FOR SELECT
-  USING (auth.uid() = user_id);
+  USING (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can insert own nursing contents"
+CREATE POLICY "Authenticated users can insert nursing contents"
   ON nursing_contents FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can update own nursing contents"
+CREATE POLICY "Authenticated users can update nursing contents"
   ON nursing_contents FOR UPDATE
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  USING (auth.role() = 'authenticated');
 
-CREATE POLICY "Users can delete own nursing contents"
+CREATE POLICY "Authenticated users can delete nursing contents"
   ON nursing_contents FOR DELETE
-  USING (auth.uid() = user_id);
-
--- ============================================================
--- STEP 5 (任意): user_id NOT NULL 制約を追加
---
--- ⚠ STEP 2 で既存データに user_id を設定した後に実行してください。
---   先にこれを実行すると既存データでエラーになります。
--- ============================================================
-
--- ALTER TABLE patients ALTER COLUMN user_id SET NOT NULL;
--- ALTER TABLE soap_records ALTER COLUMN user_id SET NOT NULL;
--- ALTER TABLE nursing_contents ALTER COLUMN user_id SET NOT NULL;
+  USING (auth.role() = 'authenticated');

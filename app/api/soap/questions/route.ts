@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
 import { getAuthUser } from "@/lib/supabase-server";
+import { toAgeRange } from "@/lib/anonymize";
 
 interface PreviousRecord {
   visitDate: string;
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
 過去の記録と今回の訪問メモを読み、看護師が記録に追記すべき確認事項を抽出してください。
 
 【利用者情報（匿名）】
-年齢：${age}歳 / 介護度：${careLevel} / 主病名：${diagnosis}
+年齢：${toAgeRange(age)} / 介護度：${careLevel} / 主病名：${diagnosis}
 ${carePlan ? `\n【ケアプラン】\n${carePlan}\n` : ""}
 ${prevText}
 
