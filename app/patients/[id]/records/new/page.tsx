@@ -50,6 +50,11 @@ export default function NewRecordPage() {
     })();
   }, [id]);
 
+  // 過去記録またはケア内容があれば確認質問を使える
+  const hasContextForQuestions = recentRecords.length > 0
+    || (patient?.initialSoapRecords && patient.initialSoapRecords.length > 0)
+    || nursingItems.length > 0;
+
   async function handleFetchQuestions() {
     if (!rawInput.trim()) { alert("訪問内容を入力してください"); return; }
     if (!patient) return;
@@ -161,12 +166,12 @@ export default function NewRecordPage() {
       createdAt: new Date().toISOString(),
     });
 
-    // ケア内容が登録済みの場合、自動diff分析を実行
-    if (nursingItems.length > 0) {
+    // ケア内容が登録済み & 記録が3件以上ある場合のみdiff分析を実行（AIコスト削減）
+    const allRecords = await getRecords(id);
+    if (nursingItems.length > 0 && allRecords.length >= 3) {
       setLoadingDiff(true);
       setStep("nursing-update");
       try {
-        const allRecords = await getRecords(id);
         const latest5 = allRecords.sort((a, b) => b.visitDate.localeCompare(a.visitDate)).slice(0, 5);
         const res = await fetch("/api/nursing-contents/diff", {
           method: "POST",
@@ -177,11 +182,11 @@ export default function NewRecordPage() {
             carePlan: patient?.carePlan,
           }),
         });
+        if (!res.ok) throw new Error("diff分析に失敗しました");
         const data = await res.json();
         if ((data.additions?.length > 0) || (data.removals?.length > 0)) {
           setDiffResult(data);
         } else {
-          // 変更提案なし → そのまま完了
           router.push(`/patients/${id}`);
         }
       } catch {
@@ -222,11 +227,13 @@ export default function NewRecordPage() {
     router.push(`/patients/${id}`);
   }
 
-  const steps: { key: Step; label: string }[] = [
+  // ケア内容がある場合のみ4ステップ表示
+  const showNursingStep = nursingItems.length > 0;
+  const visibleSteps: { key: Step; label: string }[] = [
     { key: "input", label: "入力" },
     { key: "questions", label: "確認" },
     { key: "soap", label: "保存" },
-    { key: "nursing-update", label: "ケア更新" },
+    ...(showNursingStep ? [{ key: "nursing-update" as Step, label: "ケア更新" }] : []),
   ];
 
   function getStepState(s: Step): "active" | "completed" | "inactive" {
@@ -262,7 +269,7 @@ export default function NewRecordPage() {
         {/* Step Indicator */}
         <div className="max-w-2xl mx-auto px-4 pb-3">
           <div className="step-indicator">
-            {steps.map((s, i) => {
+            {visibleSteps.map((s, i) => {
               const state = getStepState(s.key);
               return (
                 <div key={s.key} className="flex items-center gap-1">
@@ -278,7 +285,7 @@ export default function NewRecordPage() {
                            state === "completed" ? "var(--accent-cyan)" :
                            "var(--text-muted)"
                   }}>{s.label}</span>
-                  {i < steps.length - 1 && (
+                  {i < visibleSteps.length - 1 && (
                     <div className={`step-connector ml-2 ${
                       state === "completed" || state === "active" ? "step-connector-active" : "step-connector-inactive"
                     }`} />
@@ -349,7 +356,7 @@ export default function NewRecordPage() {
                 onChange={(e) => setRawInput(e.target.value)}
               />
 
-              {(recentRecords.length > 0 || (patient?.initialSoapRecords && patient.initialSoapRecords.length > 0)) ? (
+              {hasContextForQuestions ? (
                 <button
                   onClick={handleFetchQuestions}
                   disabled={loadingQuestions}
@@ -380,7 +387,7 @@ export default function NewRecordPage() {
               <div className="alert-danger">
                 <div className="flex items-center gap-2 font-semibold text-sm mb-3" style={{ color: "var(--accent-error)" }}>
                   <AlertTriangle size={16} />
-                  前回からの継続確認事項（回答してください）
+                  確認事項（回答してください）
                 </div>
                 <div className="space-y-3">
                   {alertAnswers.map((aa, i) => (

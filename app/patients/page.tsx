@@ -86,7 +86,6 @@ export default function PatientsPage() {
           records: records.slice(0, 5).map((r) => ({
             visitDate: r.visitDate, S: r.S, O: r.O, A: r.A, P: r.P,
           })),
-          diagnosis: patient.diagnosis,
         }),
       });
       const data = await res.json();

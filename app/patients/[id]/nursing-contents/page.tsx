@@ -89,7 +89,6 @@ export default function NursingContentsPage() {
             visitDate: r.visitDate, S: r.S, O: r.O, A: r.A, P: r.P,
           })),
           carePlan: patient?.carePlan,
-          diagnosis: patient?.diagnosis,
         }),
       });
       const data = await res.json();
@@ -142,7 +141,6 @@ export default function NursingContentsPage() {
             visitDate: r.visitDate, S: r.S, O: r.O, A: r.A, P: r.P,
           })),
           carePlan: patient?.carePlan,
-          diagnosis: patient?.diagnosis,
         }),
       });
       const data = await res.json();
