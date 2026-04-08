@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getPatients, getRecords, saveRecord, generateId, soapToText, textToSoap, type Patient, type SoapRecord } from "@/lib/storage";
-import { ArrowLeft, Sparkles, Save, AlertTriangle, MessageSquare, Check } from "lucide-react";
+import { getPatients, getRecords, saveRecord, generateId, soapToText, textToSoap, getNursingContents, saveNursingContents, type Patient, type SoapRecord, type NursingContentItem } from "@/lib/storage";
+import { ArrowLeft, Sparkles, Save, AlertTriangle, MessageSquare, Check, Plus, X } from "lucide-react";
 import Link from "next/link";
 
 interface Soap { S: string; O: string; A: string; P: string; }
 interface QuestionAnswer { question: string; answer: string; }
 
-type Step = "input" | "questions" | "soap";
+type Step = "input" | "questions" | "soap" | "nursing-update";
 
 export default function NewRecordPage() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +17,11 @@ export default function NewRecordPage() {
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [recentRecords, setRecentRecords] = useState<SoapRecord[]>([]);
+  const [nursingItems, setNursingItems] = useState<NursingContentItem[]>([]);
+
+  // 保存後のケア内容自動更新
+  const [diffResult, setDiffResult] = useState<{ additions: string[]; removals: string[]; reason: string } | null>(null);
+  const [loadingDiff, setLoadingDiff] = useState(false);
 
   const [visitDate, setVisitDate] = useState(new Date().toISOString().slice(0, 10));
   const [sInput, setSInput] = useState("");
@@ -40,6 +45,8 @@ export default function NewRecordPage() {
       setPatient(p);
       const records = await getRecords(id);
       setRecentRecords(records.sort((a, b) => b.visitDate.localeCompare(a.visitDate)).slice(0, 3));
+      const nc = await getNursingContents(id);
+      if (nc) setNursingItems(nc.items.filter(item => item.isActive));
     })();
   }, [id]);
 
@@ -57,6 +64,7 @@ export default function NewRecordPage() {
           rawInput,
           previousRecords: recentRecords,
           carePlan: patient.carePlan,
+          nursingContentItems: nursingItems.map(item => item.text),
           initialSoapRecords: recentRecords.length === 0 ? patient.initialSoapRecords : undefined,
         }),
       });
@@ -152,6 +160,65 @@ export default function NewRecordPage() {
       P: parsed.P,
       createdAt: new Date().toISOString(),
     });
+
+    // ケア内容が登録済みの場合、自動diff分析を実行
+    if (nursingItems.length > 0) {
+      setLoadingDiff(true);
+      setStep("nursing-update");
+      try {
+        const allRecords = await getRecords(id);
+        const latest5 = allRecords.sort((a, b) => b.visitDate.localeCompare(a.visitDate)).slice(0, 5);
+        const res = await fetch("/api/nursing-contents/diff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            currentItems: nursingItems.map(item => item.text),
+            records: latest5.map(r => ({ visitDate: r.visitDate, S: r.S, O: r.O, A: r.A, P: r.P })),
+            carePlan: patient?.carePlan,
+          }),
+        });
+        const data = await res.json();
+        if ((data.additions?.length > 0) || (data.removals?.length > 0)) {
+          setDiffResult(data);
+        } else {
+          // 変更提案なし → そのまま完了
+          router.push(`/patients/${id}`);
+        }
+      } catch {
+        // diff失敗しても記録は保存済みなので問題なし
+        router.push(`/patients/${id}`);
+      } finally {
+        setLoadingDiff(false);
+      }
+    } else {
+      router.push(`/patients/${id}`);
+    }
+  }
+
+  async function handleAcceptAddition(text: string) {
+    if (!diffResult) return;
+    const newItem: NursingContentItem = {
+      id: generateId(),
+      text,
+      isActive: true,
+      source: "ai",
+      addedAt: new Date().toISOString(),
+    };
+    const updatedItems = [...nursingItems, newItem];
+    setNursingItems(updatedItems);
+    setDiffResult({ ...diffResult, additions: diffResult.additions.filter(a => a !== text) });
+    await saveNursingContents({ patientId: id, items: updatedItems, updatedAt: new Date().toISOString() });
+  }
+
+  async function handleAcceptRemoval(text: string) {
+    if (!diffResult) return;
+    const updatedItems = nursingItems.filter(item => item.text !== text);
+    setNursingItems(updatedItems);
+    setDiffResult({ ...diffResult, removals: diffResult.removals.filter(r => r !== text) });
+    await saveNursingContents({ patientId: id, items: updatedItems, updatedAt: new Date().toISOString() });
+  }
+
+  function handleSkipDiff() {
     router.push(`/patients/${id}`);
   }
 
@@ -159,10 +226,11 @@ export default function NewRecordPage() {
     { key: "input", label: "入力" },
     { key: "questions", label: "確認" },
     { key: "soap", label: "保存" },
+    { key: "nursing-update", label: "ケア更新" },
   ];
 
   function getStepState(s: Step): "active" | "completed" | "inactive" {
-    const order: Step[] = ["input", "questions", "soap"];
+    const order: Step[] = ["input", "questions", "soap", "nursing-update"];
     const currentIdx = order.indexOf(step);
     const sIdx = order.indexOf(s);
     if (s === step) return "active";
@@ -175,7 +243,12 @@ export default function NewRecordPage() {
       <header className="app-header">
         <div className="app-header-inner">
           <button
-            onClick={() => step === "input" ? router.push(`/patients/${id}`) : setStep(step === "soap" ? "questions" : "input")}
+            onClick={() => {
+              if (step === "input") router.push(`/patients/${id}`);
+              else if (step === "nursing-update") router.push(`/patients/${id}`);
+              else if (step === "soap") setStep("questions");
+              else setStep("input");
+            }}
             className="header-back"
             aria-label="戻る"
           >
@@ -394,6 +467,91 @@ export default function NewRecordPage() {
               <Save size={20} />
               記録を保存する
             </button>
+          </div>
+        )}
+
+        {/* ===== STEP 4: Nursing Contents Update ===== */}
+        {step === "nursing-update" && (
+          <div className="space-y-4 animate-fade-in-up">
+            {loadingDiff ? (
+              <div className="card p-5 text-center">
+                <Sparkles size={24} className="mx-auto mb-3" style={{ color: "var(--accent-cyan)" }} />
+                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                  記録を保存しました。ケア内容の変更を分析中...
+                </p>
+              </div>
+            ) : diffResult && (
+              <>
+                <div className="card p-5">
+                  <h2 className="text-sm font-semibold mb-2" style={{ color: "var(--text-secondary)" }}>
+                    ケア内容の更新提案
+                  </h2>
+                  <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
+                    {diffResult.reason}
+                  </p>
+                </div>
+
+                {/* 追加提案 */}
+                {diffResult.additions.length > 0 && (
+                  <div className="card p-5" style={{ borderLeft: "3px solid var(--accent-cyan)" }}>
+                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: "var(--accent-cyan)" }}>
+                      <Plus size={16} />
+                      追加するケア項目
+                    </h3>
+                    <div className="space-y-2">
+                      {diffResult.additions.map((text, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 py-2 px-3" style={{
+                          background: "rgba(0,200,200,0.05)",
+                          borderRadius: "8px",
+                        }}>
+                          <span className="text-sm" style={{ color: "var(--text-primary)" }}>{text}</span>
+                          <button
+                            onClick={() => handleAcceptAddition(text)}
+                            className="btn-outline"
+                            style={{ padding: "0.25rem 0.75rem", fontSize: "0.75rem" }}
+                          >
+                            <Check size={14} />
+                            追加
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 削除提案 */}
+                {diffResult.removals.length > 0 && (
+                  <div className="card p-5" style={{ borderLeft: "3px solid var(--accent-error, #e53e3e)" }}>
+                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2" style={{ color: "var(--accent-error, #e53e3e)" }}>
+                      <X size={16} />
+                      不要になったケア項目
+                    </h3>
+                    <div className="space-y-2">
+                      {diffResult.removals.map((text, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 py-2 px-3" style={{
+                          background: "rgba(255,0,0,0.03)",
+                          borderRadius: "8px",
+                        }}>
+                          <span className="text-sm" style={{ color: "var(--text-primary)" }}>{text}</span>
+                          <button
+                            onClick={() => handleAcceptRemoval(text)}
+                            className="btn-outline"
+                            style={{ padding: "0.25rem 0.75rem", fontSize: "0.75rem", borderColor: "rgba(255,68,68,0.3)" }}
+                          >
+                            <X size={14} />
+                            削除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button onClick={handleSkipDiff} className="btn-primary">
+                  完了
+                </button>
+              </>
+            )}
           </div>
         )}
       </main>

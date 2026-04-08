@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { records, carePlan, diagnosis } = body;
+  const { records, carePlan } = body;
 
   if (!records || records.length === 0) {
     return NextResponse.json({ error: "記録データがありません" }, { status: 400 });
@@ -22,11 +22,10 @@ export async function POST(req: NextRequest) {
     .join("\n\n");
 
   const carePlanSection = carePlan ? `\n【ケアプラン】\n${carePlan}\n` : "";
-  const diagnosisSection = diagnosis ? `\n【主病名】${diagnosis}\n` : "";
 
   const prompt = `あなたは訪問看護の記録分析AIです。
 以下の訪問看護記録とケアプラン情報から、この利用者に対して定期的に実施している看護内容・ケア項目を抽出してください。
-${diagnosisSection}${carePlanSection}
+${carePlanSection}
 ${recordsText}
 
 【出力形式】

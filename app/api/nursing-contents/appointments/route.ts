@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { records, diagnosis } = body;
+  const { records } = body;
 
   if (!records || records.length === 0) {
     return NextResponse.json({ error: "記録データがありません" }, { status: 400 });
@@ -21,12 +21,12 @@ export async function POST(req: NextRequest) {
     )
     .join("\n\n");
 
-  const diagnosisSection = diagnosis ? `【主病名】${diagnosis}\n\n` : "";
+
 
   const prompt = `あなたは訪問看護の記録分析AIです。
 以下の訪問看護記録から、次回の受診予定・検査予定・予約情報を抽出してください。
 
-${diagnosisSection}${recordsText}
+${recordsText}
 
 【出力形式】
 以下のJSON形式で出力してください。余分な説明は不要です。

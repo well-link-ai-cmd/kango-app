@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { currentItems, records, carePlan, diagnosis } = body;
+  const { currentItems, records, carePlan } = body;
 
   if (!records || records.length === 0) {
     return NextResponse.json({ error: "記録データがありません" }, { status: 400 });
@@ -26,11 +26,10 @@ export async function POST(req: NextRequest) {
     : "";
 
   const carePlanSection = carePlan ? `\n【ケアプラン】\n${carePlan}\n` : "";
-  const diagnosisSection = diagnosis ? `\n【主病名】${diagnosis}\n` : "";
 
   const prompt = `あなたは訪問看護の記録分析AIです。
 現在登録されている看護内容リストと最新の訪問看護記録を比較し、追加すべき項目と削除候補を提案してください。
-${diagnosisSection}${carePlanSection}${currentItemsText}
+${carePlanSection}${currentItemsText}
 ${recordsText}
 
 【出力形式】

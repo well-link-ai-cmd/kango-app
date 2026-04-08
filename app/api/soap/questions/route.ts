@@ -17,11 +17,12 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { sInput, rawInput, previousRecords, carePlan, initialSoapRecords } = body as {
+  const { sInput, rawInput, previousRecords, carePlan, nursingContentItems, initialSoapRecords } = body as {
     sInput?: string;
     rawInput: string;
     previousRecords: PreviousRecord[];
     carePlan?: string;
+    nursingContentItems?: string[];
     initialSoapRecords?: PreviousRecord[];
   };
 
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
   const prompt = `あなたは訪問看護の記録支援AIです。
 過去の記録と今回の訪問メモを読み、看護師が記録に追記すべき確認事項を抽出してください。
 
-${carePlan ? `【ケアプラン】\n${carePlan}\n` : ""}
+${carePlan ? `【ケアプラン】\n${carePlan}\n` : ""}${nursingContentItems && nursingContentItems.length > 0 ? `【登録済みケア内容】\n${nursingContentItems.map(item => `・${item}`).join("\n")}\n` : ""}
 ${prevText}
 
 ${sInput?.trim() ? `【今回のS情報（利用者の発言）】\n${sInput}\n\n` : ""}【今回の訪問メモ（未整理）】
@@ -64,6 +65,7 @@ ${rawInput}
 
 【ルール】
 - alertsは前回・前々回のP（プラン）に記載された継続観察事項・フォローアップ事項のうち、今回のメモに言及がないものを抽出する
+- 登録済みケア内容が提供されている場合、そのケア項目のうち今回のメモに言及がないものもalertsに含める（例：「褥瘡処置について記載がありません」）
 - questionsは今回のメモの内容を補完する具体的な確認質問にする（バイタル・症状・処置・生活状況など）
 - 今回のメモに既に書かれていることは質問しない
 - 質問は「〜はどうでしたか？」「〜は確認しましたか？」の形式で簡潔に
