@@ -19,6 +19,7 @@ export default function NewRecordPage() {
   const [recentRecords, setRecentRecords] = useState<SoapRecord[]>([]);
 
   const [visitDate, setVisitDate] = useState(new Date().toISOString().slice(0, 10));
+  const [sInput, setSInput] = useState("");
   const [rawInput, setRawInput] = useState("");
 
   const [alerts, setAlerts] = useState<string[]>([]);
@@ -52,6 +53,7 @@ export default function NewRecordPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          sInput,
           rawInput,
           previousRecords: recentRecords,
           age: patient.age,
@@ -84,6 +86,7 @@ export default function NewRecordPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          sInput,
           rawInput,
           age: patient.age,
           careLevel: patient.careLevel,
@@ -120,6 +123,7 @@ export default function NewRecordPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          sInput,
           rawInput,
           age: patient.age,
           careLevel: patient.careLevel,
@@ -250,17 +254,33 @@ export default function NewRecordPage() {
               />
             </div>
 
-            {/* Input Area */}
+            {/* S情報 Input Area */}
             <div className="card p-5">
-              <label className="input-label">訪問内容を話し言葉で入力</label>
+              <label className="input-label">S情報（利用者の発言）</label>
               <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
-                バイタル・症状・処置・会話など、気になったことを自由に入力してください
+                利用者本人や家族の発言をそのまま入力してください。入力した内容がS情報としてそのまま使われます（医療用語の誤字のみ補正）
+              </p>
+              <textarea
+                rows={4}
+                className="input-field text-base"
+                style={{ resize: "none", lineHeight: "1.8" }}
+                placeholder="例：最近ちょっと足がむくんでる気がする。頭痛はないけど、夜あんまり眠れてない。ご飯は普通に食べれてるよ。"
+                value={sInput}
+                onChange={(e) => setSInput(e.target.value)}
+              />
+            </div>
+
+            {/* 訪問内容 Input Area */}
+            <div className="card p-5">
+              <label className="input-label">訪問内容（今日やったこと）</label>
+              <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+                バイタル・処置・観察所見など、今日の訪問でやったことを話し言葉で自由に入力してください。AIがO・A・Pに整形します
               </p>
               <textarea
                 rows={6}
                 className="input-field text-base"
                 style={{ resize: "none", lineHeight: "1.8" }}
-                placeholder="例：血圧168/92でいつもより高め。本人は頭痛なし、めまいもないと言っている。足首に軽度の浮腫あり。右踵の褥瘡処置実施、滲出液少量、感染兆候なし。食欲は普通。"
+                placeholder="例：血圧168/92でいつもより高め。足首に軽度の浮腫あり。右踵の褥瘡処置実施、滲出液少量、感染兆候なし。食欲は普通。"
                 value={rawInput}
                 onChange={(e) => setRawInput(e.target.value)}
               />

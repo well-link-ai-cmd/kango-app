@@ -11,7 +11,8 @@ interface PreviousRecord {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { rawInput, previousRecords, age, careLevel, diagnosis, carePlan, initialSoapRecords } = body as {
+  const { sInput, rawInput, previousRecords, age, careLevel, diagnosis, carePlan, initialSoapRecords } = body as {
+    sInput?: string;
     rawInput: string;
     previousRecords: PreviousRecord[];
     age: number;
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
 ${carePlan ? `\n【ケアプラン】\n${carePlan}\n` : ""}
 ${prevText}
 
-【今回の訪問メモ（未整理）】
+${sInput?.trim() ? `【今回のS情報（利用者の発言）】\n${sInput}\n\n` : ""}【今回の訪問メモ（未整理）】
 ${rawInput}
 
 以下のJSON形式で出力してください。余分な説明は不要です。

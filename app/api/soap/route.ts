@@ -3,7 +3,7 @@ import { generateAiResponse } from "@/lib/ai-client";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { rawInput, age, careLevel, diagnosis, carePlan, previousRecords, alertAnswers, questionAnswers, initialSoapRecords } = body;
+  const { sInput, rawInput, age, careLevel, diagnosis, carePlan, previousRecords, alertAnswers, questionAnswers, initialSoapRecords } = body;
 
   if (!rawInput?.trim()) {
     return NextResponse.json({ error: "訪問内容が入力されていません" }, { status: 400 });
@@ -45,7 +45,52 @@ export async function POST(req: NextRequest) {
         .join("\n") + "\n"
     : "";
 
-  const prompt = `あなたは訪問看護師の記録作成を支援するAIです。
+  // S情報が個別入力されている場合は、SはパススルーしてOAPのみ生成
+  const hasSInput = sInput?.trim();
+
+  const prompt = hasSInput
+    ? `あなたは訪問看護師の記録作成を支援するAIです。
+S情報（利用者の発言）は看護師が既に記録済みです。看護師が話し言葉で伝えた訪問内容から、O・A・Pを生成してください。
+
+【利用者情報（匿名）】
+年齢：${age}歳
+介護度：${careLevel}
+主病名：${diagnosis}
+${carePlanSection}${prevSection}
+【S情報（看護師が記録済み・参考情報として参照）】
+${sInput}
+
+【訪問時の内容（看護師のメモ・O/A/P生成用）】
+${rawInput}
+${alertAnswersSection}${answersSection}
+【出力形式】
+以下のJSON形式で出力してください。余分な説明は不要です。
+{
+  "S": "（看護師が入力したS情報をそのまま返す。医療用語の誤字・誤変換のみ補正。文体や表現は一切変えない）",
+  "O": "客観的情報",
+  "A": "アセスメント",
+  "P": "プラン"
+}
+
+【Sの書き方】
+・看護師が入力した以下のS情報をそのまま返す。文体・表現・話し言葉は一切変更しない
+・修正して良いのは、音声入力による医療用語の誤変換のみ（例：「けつあつ」→「血圧」、「じょくそう」→「褥瘡」）
+・間接話法（「〜とのこと」「〜と言っていた」「〜と話される」）への変換は絶対にしない
+・家族の発言が含まれている場合はそのまま残す
+
+【O/A/Pの書き方】
+O：訪問の場面描写から始め、時系列に沿って自然な文章で書く。バイタル・処置・観察所見を具体的に。見出し（【】）や箇条書きは使わない。次回訪問予定があれば末尾に記載する。
+A：全体の状態評価から始め、各問題の現状と方向性を2〜3段落でまとめる。前回からの変化を反映する。番号リストは使わない。
+P：今後のケア方針を自然な文章で3〜5文にまとめる。「〜していく」「〜を継続する」の語尾で統一。番号リスト・見出しは使わない。
+
+【重要】
+・メモから要点を抽出して整理する。勝手に事実を追加しない
+・前回記録のプランに記載された継続事項を今回のA・Pに反映する
+・過去の記録が提供されている場合は、その文体・詳細度・文章量を参考にする
+・音声入力の誤変換は正しい医療用語に補正する
+・S情報は看護師の入力をほぼそのまま返す。内容の追加・削除・言い換えはしない`
+
+    : `あなたは訪問看護師の記録作成を支援するAIです。
 看護師が話し言葉でバーッと書き込んだメモから、要点を抽出してSOAP形式の看護記録に成形してください。
 
 【利用者情報（匿名）】
