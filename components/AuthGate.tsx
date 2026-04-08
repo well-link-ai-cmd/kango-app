@@ -1,42 +1,45 @@
 "use client";
 
 import { useState, useEffect, ReactNode } from "react";
-
-const AUTH_KEY = "kango_auth";
+import { getSupabase } from "@/lib/supabase";
+import type { User } from "@supabase/supabase-js";
 
 export default function AuthGate({ children }: { children: ReactNode }) {
-  const [authed, setAuthed] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const [checking, setChecking] = useState(true);
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // セッション内で認証済みならスキップ
-    if (sessionStorage.getItem(AUTH_KEY) === "true") {
-      setAuthed(true);
-    }
-    setChecking(false);
+    const supabase = getSupabase();
+    // 既存セッションを確認
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+      setChecking(false);
+    });
+
+    // 認証状態の変化を監視
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      const data = await res.json();
-
-      if (data.ok) {
-        sessionStorage.setItem(AUTH_KEY, "true");
-        setAuthed(true);
-      } else {
-        setError(data.error || "認証に失敗しました");
+      const supabase = getSupabase();
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setError(error.message === "Invalid login credentials"
+          ? "メールアドレスまたはパスワードが正しくありません"
+          : error.message);
       }
     } catch {
       setError("通信エラーが発生しました");
@@ -46,7 +49,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (checking) return null;
-  if (authed) return <>{children}</>;
+  if (user) return <>{children}</>;
 
   return (
     <div style={{
@@ -56,7 +59,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       justifyContent: "center",
       padding: "1rem",
     }}>
-      <form onSubmit={handleSubmit} style={{
+      <form onSubmit={handleLogin} style={{
         background: "var(--bg-card, #fff)",
         borderRadius: "16px",
         padding: "2.5rem 2rem",
@@ -79,15 +82,34 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           color: "var(--text-secondary, #666)",
           marginBottom: "1.5rem",
         }}>
-          パスワードを入力してください
+          ログインしてください
         </p>
+
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="メールアドレス"
+          autoFocus
+          autoComplete="email"
+          style={{
+            width: "100%",
+            padding: "0.75rem 1rem",
+            borderRadius: "8px",
+            border: "1px solid var(--border, #e0e0e0)",
+            fontSize: "1rem",
+            marginBottom: "0.75rem",
+            boxSizing: "border-box",
+            outline: "none",
+          }}
+        />
 
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="パスワード"
-          autoFocus
+          autoComplete="current-password"
           style={{
             width: "100%",
             padding: "0.75rem 1rem",
@@ -112,7 +134,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
         <button
           type="submit"
-          disabled={loading || !password}
+          disabled={loading || !email || !password}
           style={{
             width: "100%",
             padding: "0.75rem",
@@ -123,10 +145,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
             fontSize: "1rem",
             border: "none",
             cursor: loading ? "wait" : "pointer",
-            opacity: loading || !password ? 0.6 : 1,
+            opacity: loading || !email || !password ? 0.6 : 1,
           }}
         >
-          {loading ? "確認中..." : "ログイン"}
+          {loading ? "ログイン中..." : "ログイン"}
         </button>
       </form>
     </div>

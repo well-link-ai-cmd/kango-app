@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
+import { getAuthUser } from "@/lib/supabase-server";
 
 export async function POST(req: NextRequest) {
+  const user = await getAuthUser();
+  if (!user) {
+    return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+  }
+
   const body = await req.json();
   const { records, carePlan, diagnosis } = body;
 

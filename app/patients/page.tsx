@@ -3,7 +3,8 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, type Patient } from "@/lib/storage";
-import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone } from "lucide-react";
+import { getSupabase } from "@/lib/supabase";
+import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut } from "lucide-react";
 
 const CARE_LEVEL_BADGE: Record<string, string> = {
   "要支援1": "badge-green",
@@ -144,10 +145,20 @@ export default function PatientsPage() {
             <h1>AI訪問看護記録アシスト</h1>
             <p className="subtitle">利用者一覧（{patients.length}名）</p>
           </div>
-          <Link href="/patients/new" className="btn-outline">
-            <UserPlus size={16} />
-            利用者追加
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/patients/new" className="btn-outline">
+              <UserPlus size={16} />
+              利用者追加
+            </Link>
+            <button
+              onClick={() => { getSupabase().auth.signOut(); }}
+              className="btn-outline"
+              style={{ padding: "0.5rem", minWidth: "auto" }}
+              title="ログアウト"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       </header>
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
+import { getAuthUser } from "@/lib/supabase-server";
 
 interface PreviousRecord {
   visitDate: string;
@@ -10,6 +11,11 @@ interface PreviousRecord {
 }
 
 export async function POST(req: NextRequest) {
+  const user = await getAuthUser();
+  if (!user) {
+    return NextResponse.json({ error: "認証が必要です" }, { status: 401 });
+  }
+
   const body = await req.json();
   const { sInput, rawInput, previousRecords, age, careLevel, diagnosis, carePlan, initialSoapRecords } = body as {
     sInput?: string;

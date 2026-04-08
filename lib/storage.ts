@@ -1,5 +1,12 @@
 import { getSupabase } from "./supabase";
 
+// ---- 認証ヘルパー ----
+
+async function getCurrentUserId(): Promise<string | null> {
+  const { data: { user } } = await getSupabase().auth.getUser();
+  return user?.id ?? null;
+}
+
 // データ型定義
 
 export type CareLevel =
@@ -117,8 +124,9 @@ export interface NursingContents {
 // ---- camelCase <-> snake_case 変換 ----
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function patientToRow(p: Patient): Record<string, any> {
-  return {
+function patientToRow(p: Patient, userId?: string): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row: Record<string, any> = {
     id: p.id,
     name: p.name,
     name_kana: p.nameKana ?? null,
@@ -141,6 +149,8 @@ function patientToRow(p: Patient): Record<string, any> {
     initial_soap_records: p.initialSoapRecords ?? null,
     created_at: p.createdAt,
   };
+  if (userId) row.user_id = userId;
+  return row;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -182,8 +192,9 @@ function rowToPatient(row: any): Patient {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function recordToRow(r: SoapRecord): Record<string, any> {
-  return {
+function recordToRow(r: SoapRecord, userId?: string): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row: Record<string, any> = {
     id: r.id,
     patient_id: r.patientId,
     visit_date: r.visitDate,
@@ -194,6 +205,8 @@ function recordToRow(r: SoapRecord): Record<string, any> {
     p_text: r.P,
     created_at: r.createdAt,
   };
+  if (userId) row.user_id = userId;
+  return row;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -223,7 +236,8 @@ export async function getPatients(): Promise<Patient[]> {
 }
 
 export async function savePatient(patient: Patient): Promise<void> {
-  const row = patientToRow(patient);
+  const userId = await getCurrentUserId();
+  const row = patientToRow(patient, userId ?? undefined);
   const { error } = await getSupabase()
     .from("patients")
     .upsert(row, { onConflict: "id" });
@@ -249,7 +263,8 @@ export async function getRecords(patientId?: string): Promise<SoapRecord[]> {
 }
 
 export async function saveRecord(record: SoapRecord): Promise<void> {
-  const row = recordToRow(record);
+  const userId = await getCurrentUserId();
+  const row = recordToRow(record, userId ?? undefined);
   const { error } = await getSupabase()
     .from("soap_records")
     .upsert(row, { onConflict: "id" });
@@ -342,14 +357,18 @@ export async function getNursingContents(patientId: string): Promise<NursingCont
 }
 
 export async function saveNursingContents(contents: NursingContents): Promise<void> {
+  const userId = await getCurrentUserId();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row: Record<string, any> = {
+    patient_id: contents.patientId,
+    items: contents.items,
+    last_analyzed_at: contents.lastAnalyzedAt ?? null,
+    updated_at: contents.updatedAt,
+  };
+  if (userId) row.user_id = userId;
   const { error } = await getSupabase()
     .from("nursing_contents")
-    .upsert({
-      patient_id: contents.patientId,
-      items: contents.items,
-      last_analyzed_at: contents.lastAnalyzedAt ?? null,
-      updated_at: contents.updatedAt,
-    }, { onConflict: "patient_id" });
+    .upsert(row, { onConflict: "patient_id" });
   if (error) console.error("saveNursingContents error:", error);
 }
 
