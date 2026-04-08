@@ -415,14 +415,14 @@ export async function migrateLocalStorageToSupabase(): Promise<void> {
 
   // 患者をupsert
   if (patients.length > 0) {
-    const rows = patients.map(patientToRow);
+    const rows = patients.map((p) => patientToRow(p));
     const { error } = await getSupabase().from("patients").upsert(rows, { onConflict: "id" });
     if (error) { console.error("[移行] patients error:", error); return; }
   }
 
   // 記録をupsert
   if (records.length > 0) {
-    const rows = records.map(recordToRow);
+    const rows = records.map((r) => recordToRow(r));
     const { error } = await getSupabase().from("soap_records").upsert(rows, { onConflict: "id" });
     if (error) { console.error("[移行] soap_records error:", error); return; }
   }
