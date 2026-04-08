@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
 import { getAuthUser } from "@/lib/supabase-server";
-import { toAgeRange } from "@/lib/anonymize";
 
 interface PreviousRecord {
   visitDate: string;
@@ -18,13 +17,10 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { sInput, rawInput, previousRecords, age, careLevel, diagnosis, carePlan, initialSoapRecords } = body as {
+  const { sInput, rawInput, previousRecords, carePlan, initialSoapRecords } = body as {
     sInput?: string;
     rawInput: string;
     previousRecords: PreviousRecord[];
-    age: number;
-    careLevel: string;
-    diagnosis: string;
     carePlan?: string;
     initialSoapRecords?: PreviousRecord[];
   };
@@ -50,9 +46,7 @@ export async function POST(req: NextRequest) {
   const prompt = `あなたは訪問看護の記録支援AIです。
 過去の記録と今回の訪問メモを読み、看護師が記録に追記すべき確認事項を抽出してください。
 
-【利用者情報（匿名）】
-年齢：${toAgeRange(age)} / 介護度：${careLevel} / 主病名：${diagnosis}
-${carePlan ? `\n【ケアプラン】\n${carePlan}\n` : ""}
+${carePlan ? `【ケアプラン】\n${carePlan}\n` : ""}
 ${prevText}
 
 ${sInput?.trim() ? `【今回のS情報（利用者の発言）】\n${sInput}\n\n` : ""}【今回の訪問メモ（未整理）】
