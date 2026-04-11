@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, type Patient } from "@/lib/storage";
+import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, getPatientTodos, getPatientsWithPendingTodos, addPatientTodo, togglePatientTodo, deletePatientTodo, type Patient, type PatientTodo } from "@/lib/storage";
 import { getSupabase } from "@/lib/supabase";
-import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut, Settings } from "lucide-react";
+import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut, Settings, ListTodo, Plus, Check } from "lucide-react";
 import { getUserRole } from "@/components/AuthGate";
 
 const CARE_LEVEL_BADGE: Record<string, string> = {
@@ -55,10 +55,18 @@ export default function PatientsPage() {
   } | null>(null);
   const [appointError, setAppointError] = useState("");
 
+  // To-Do
+  const [todoPatient, setTodoPatient] = useState<Patient | null>(null);
+  const [todos, setTodos] = useState<PatientTodo[]>([]);
+  const [newTodoText, setNewTodoText] = useState("");
+  const [todoLoading, setTodoLoading] = useState(false);
+  const [pendingTodoPatientIds, setPendingTodoPatientIds] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     (async () => {
       await migrateLocalStorageToSupabase();
       setPatients(await getPatients());
+      setPendingTodoPatientIds(await getPatientsWithPendingTodos());
     })();
   }, []);
 
@@ -66,6 +74,41 @@ export default function PatientsPage() {
     if (!confirm(`${name} 様の情報と全記録を削除しますか？`)) return;
     await deletePatient(id);
     setPatients(await getPatients());
+  }
+
+  async function handleOpenTodos(patient: Patient) {
+    setTodoPatient(patient);
+    setNewTodoText("");
+    setTodoLoading(true);
+    setTodos(await getPatientTodos(patient.id));
+    setTodoLoading(false);
+  }
+
+  async function handleAddTodo() {
+    if (!todoPatient || !newTodoText.trim()) return;
+    const added = await addPatientTodo(todoPatient.id, newTodoText.trim());
+    if (added) {
+      setTodos([added, ...todos]);
+      setNewTodoText("");
+      setPendingTodoPatientIds(await getPatientsWithPendingTodos());
+    }
+  }
+
+  async function handleToggleTodo(todo: PatientTodo) {
+    const newDone = !todo.isDone;
+    await togglePatientTodo(todo.id, newDone);
+    if (todoPatient) {
+      setTodos(await getPatientTodos(todoPatient.id));
+      setPendingTodoPatientIds(await getPatientsWithPendingTodos());
+    }
+  }
+
+  async function handleDeleteTodo(id: string) {
+    await deletePatientTodo(id);
+    if (todoPatient) {
+      setTodos(await getPatientTodos(todoPatient.id));
+      setPendingTodoPatientIds(await getPatientsWithPendingTodos());
+    }
   }
 
   async function handleOpenAppointments(patient: Patient) {
@@ -301,6 +344,32 @@ export default function PatientsPage() {
                               <Calendar size={13} />
                               受診予定
                             </button>
+                            <button
+                              onClick={() => handleOpenTodos(p)}
+                              className="btn-quick"
+                              style={pendingTodoPatientIds.has(p.id) ? {
+                                background: "rgba(255, 140, 0, 0.1)",
+                                borderColor: "rgba(255, 140, 0, 0.4)",
+                                color: "#CC6600",
+                                fontWeight: 700,
+                              } : undefined}
+                            >
+                              <ListTodo size={13} />
+                              やること
+                              {pendingTodoPatientIds.has(p.id) && (
+                                <span style={{
+                                  background: "#FF8C00",
+                                  color: "white",
+                                  borderRadius: "999px",
+                                  padding: "0 6px",
+                                  fontSize: "0.65rem",
+                                  fontWeight: 700,
+                                  marginLeft: "2px",
+                                }}>
+                                  !
+                                </span>
+                              )}
+                            </button>
                             <div className="flex-1" />
                             <button
                               onClick={() => handleDelete(p.id, p.name)}
@@ -449,6 +518,124 @@ export default function PatientsPage() {
                 {appointData.notes && (
                   <p className="text-xs" style={{ color: "var(--text-muted)" }}>{appointData.notes}</p>
                 )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* やること（To-Do）モーダル */}
+      {todoPatient && (
+        <div className="modal-overlay" onClick={() => setTodoPatient(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-handle" />
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-lg" style={{ color: "var(--text-primary)" }}>
+                {todoPatient.name} 様のやること
+              </h2>
+              <button onClick={() => setTodoPatient(null)} className="btn-delete">
+                <X size={20} />
+              </button>
+            </div>
+
+            <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
+              次回訪問時にやってほしいことを登録してください。他のスタッフへの引き継ぎに便利です。
+            </p>
+
+            {/* 新規追加フォーム */}
+            <div className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={newTodoText}
+                onChange={(e) => setNewTodoText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    handleAddTodo();
+                  }
+                }}
+                placeholder="例: 爪切りをお願いします"
+                className="input-field"
+                style={{ flex: 1 }}
+              />
+              <button
+                onClick={handleAddTodo}
+                disabled={!newTodoText.trim()}
+                className="btn-outline"
+                style={{
+                  padding: "10px 14px",
+                  opacity: !newTodoText.trim() ? 0.5 : 1,
+                }}
+                title="追加"
+              >
+                <Plus size={18} />
+              </button>
+            </div>
+
+            {/* To-Do一覧 */}
+            {todoLoading ? (
+              <p className="text-sm text-center py-6" style={{ color: "var(--text-muted)" }}>
+                読み込み中...
+              </p>
+            ) : todos.length === 0 ? (
+              <p className="text-sm text-center py-6" style={{ color: "var(--text-muted)" }}>
+                やることが登録されていません
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {todos.map((t) => (
+                  <div
+                    key={t.id}
+                    className="flex items-start gap-3 p-3 rounded-xl"
+                    style={{
+                      background: t.isDone ? "rgba(0, 200, 150, 0.06)" : "var(--bg-tertiary)",
+                      opacity: t.isDone ? 0.7 : 1,
+                    }}
+                  >
+                    <button
+                      onClick={() => handleToggleTodo(t)}
+                      style={{
+                        width: "24px",
+                        height: "24px",
+                        borderRadius: "6px",
+                        border: t.isDone ? "none" : "2px solid var(--text-muted)",
+                        background: t.isDone ? "var(--accent-success)" : "transparent",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        marginTop: "2px",
+                      }}
+                      title={t.isDone ? "未完了に戻す" : "完了にする"}
+                    >
+                      {t.isDone && <Check size={14} color="white" strokeWidth={3} />}
+                    </button>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p
+                        className="text-sm"
+                        style={{
+                          color: "var(--text-primary)",
+                          textDecoration: t.isDone ? "line-through" : "none",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {t.content}
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                        {new Date(t.createdAt).toLocaleDateString("ja-JP")}
+                        {t.isDone && t.doneAt && ` → ${new Date(t.doneAt).toLocaleDateString("ja-JP")} 完了`}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteTodo(t.id)}
+                      className="btn-delete"
+                      aria-label="削除"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
