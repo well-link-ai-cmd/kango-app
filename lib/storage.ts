@@ -396,13 +396,31 @@ export function generateId(): string {
 
 // ---- 患者別To-Do ヘルパー ----
 
+/** 完了済みTo-Doの保持期間（日数）。これを過ぎたものは自動削除される */
+const COMPLETED_TODO_RETENTION_DAYS = 7;
+
+/** 完了から一定期間経過したTo-Doを削除（内部ヘルパー） */
+async function cleanupOldCompletedTodos(): Promise<void> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - COMPLETED_TODO_RETENTION_DAYS);
+  const { error } = await getSupabase()
+    .from("patient_todos")
+    .delete()
+    .eq("is_done", true)
+    .lt("done_at", cutoff.toISOString());
+  if (error) console.error("cleanupOldCompletedTodos error:", error);
+}
+
 export async function getPatientTodos(patientId: string): Promise<PatientTodo[]> {
+  // 古い完了済みTo-Doを自動削除
+  await cleanupOldCompletedTodos();
+
   const { data, error } = await getSupabase()
     .from("patient_todos")
     .select("*")
     .eq("patient_id", patientId)
-    .order("is_done", { ascending: true })
-    .order("created_at", { ascending: false });
+    .order("is_done", { ascending: true })      // 未完了(false)が先
+    .order("created_at", { ascending: false }); // 同じ完了状態内では新しい順
 
   if (error) {
     console.error("getPatientTodos error:", error);
@@ -410,7 +428,7 @@ export async function getPatientTodos(patientId: string): Promise<PatientTodo[]>
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((row: any) => ({
+  const todos = (data ?? []).map((row: any) => ({
     id: row.id,
     patientId: row.patient_id,
     content: row.content,
@@ -418,10 +436,21 @@ export async function getPatientTodos(patientId: string): Promise<PatientTodo[]>
     createdAt: row.created_at,
     doneAt: row.done_at ?? undefined,
   }));
+
+  // 念のためクライアント側でもソート: 未完了 → 完了の順
+  todos.sort((a, b) => {
+    if (a.isDone !== b.isDone) return a.isDone ? 1 : -1;
+    return b.createdAt.localeCompare(a.createdAt);
+  });
+
+  return todos;
 }
 
 /** 全患者の「未完了To-Doあり」マップを取得（一覧バッジ表示用） */
 export async function getPatientsWithPendingTodos(): Promise<Set<string>> {
+  // ページ読み込み時にも古い完了済みTo-Doを自動削除
+  await cleanupOldCompletedTodos();
+
   const { data, error } = await getSupabase()
     .from("patient_todos")
     .select("patient_id")

@@ -539,7 +539,7 @@ export default function PatientsPage() {
             </div>
 
             <p className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
-              次回訪問時にやってほしいことを登録してください。他のスタッフへの引き継ぎに便利です。
+              次回訪問時にやってほしいことを登録してください。完了したものは7日後に自動で削除されます。
             </p>
 
             {/* 新規追加フォーム */}
