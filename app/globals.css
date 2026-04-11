@@ -37,6 +37,9 @@
   /* Transitions */
   --transition-fast: 0.2s ease;
   --transition-medium: 0.4s ease;
+
+  /* Layout — sticky ヘッダーの高さ。患者一覧のフィルタバーの sticky top に使う */
+  --header-h: 96px;
 }
 
 @theme inline {

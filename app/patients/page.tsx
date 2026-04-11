@@ -228,51 +228,71 @@ export default function PatientsPage() {
           </div>
         ) : (
           <div className="space-y-4 animate-fade-in-up">
-            {/* Search Bar */}
-            <div className="relative">
-              <Search
-                size={18}
-                className="absolute left-4 top-1/2 -translate-y-1/2"
-                style={{ color: "var(--text-muted)" }}
-              />
-              <input
-                type="text"
-                className="input-field"
-                style={{ paddingLeft: "44px" }}
-                placeholder="名前・ふりがな・疾患・担当で検索"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+            {/* 検索バー + あかさたなタブ（スクロール時も上部に固定表示） */}
+            <div
+              className="space-y-3"
+              style={{
+                position: "sticky",
+                top: "var(--header-h)",
+                zIndex: 50,
+                background: "rgba(248, 249, 252, 0.92)",
+                backdropFilter: "blur(12px)",
+                WebkitBackdropFilter: "blur(12px)",
+                marginLeft: "-16px",
+                marginRight: "-16px",
+                paddingLeft: "16px",
+                paddingRight: "16px",
+                paddingTop: "10px",
+                paddingBottom: "10px",
+                borderBottom: "1px solid rgba(0, 0, 0, 0.04)",
+              }}
+            >
+              {/* Search Bar */}
+              <div className="relative">
+                <Search
+                  size={18}
+                  className="absolute left-4 top-1/2 -translate-y-1/2"
+                  style={{ color: "var(--text-muted)" }}
+                />
+                <input
+                  type="text"
+                  className="input-field"
+                  style={{ paddingLeft: "44px" }}
+                  placeholder="名前・ふりがな・疾患・担当で検索"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
 
-            {/* あかさたな tabs */}
-            {!searchQuery.trim() && availableGroups.length > 1 && (
-              <div className="flex gap-1.5 flex-wrap">
-                <button
-                  onClick={() => setActiveGroup(null)}
-                  className="text-xs px-3 py-1.5 rounded-full font-medium transition-colors"
-                  style={{
-                    background: activeGroup === null ? "var(--accent-cyan)" : "var(--bg-tertiary)",
-                    color: activeGroup === null ? "#fff" : "var(--text-secondary)",
-                  }}
-                >
-                  すべて
-                </button>
-                {availableGroups.map((label) => (
+              {/* あかさたな tabs */}
+              {!searchQuery.trim() && availableGroups.length > 1 && (
+                <div className="flex gap-1.5 flex-wrap">
                   <button
-                    key={label}
-                    onClick={() => setActiveGroup(activeGroup === label ? null : label)}
+                    onClick={() => setActiveGroup(null)}
                     className="text-xs px-3 py-1.5 rounded-full font-medium transition-colors"
                     style={{
-                      background: activeGroup === label ? "var(--accent-cyan)" : "var(--bg-tertiary)",
-                      color: activeGroup === label ? "#fff" : "var(--text-secondary)",
+                      background: activeGroup === null ? "var(--accent-cyan)" : "var(--bg-tertiary)",
+                      color: activeGroup === null ? "#fff" : "var(--text-secondary)",
                     }}
                   >
-                    {label}
+                    すべて
                   </button>
-                ))}
-              </div>
-            )}
+                  {availableGroups.map((label) => (
+                    <button
+                      key={label}
+                      onClick={() => setActiveGroup(activeGroup === label ? null : label)}
+                      className="text-xs px-3 py-1.5 rounded-full font-medium transition-colors"
+                      style={{
+                        background: activeGroup === label ? "var(--accent-cyan)" : "var(--bg-tertiary)",
+                        color: activeGroup === label ? "#fff" : "var(--text-secondary)",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Grouped List */}
             {filtered.length === 0 ? (
