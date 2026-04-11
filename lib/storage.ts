@@ -121,6 +121,16 @@ export interface NursingContents {
   updatedAt: string;
 }
 
+// 患者別To-Do（引き継ぎメモ）
+export interface PatientTodo {
+  id: string;
+  patientId: string;
+  content: string;
+  isDone: boolean;
+  createdAt: string;
+  doneAt?: string;
+}
+
 // ---- camelCase <-> snake_case 変換 ----
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -382,6 +392,98 @@ export async function deleteNursingContents(patientId: string): Promise<void> {
 
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// ---- 患者別To-Do ヘルパー ----
+
+export async function getPatientTodos(patientId: string): Promise<PatientTodo[]> {
+  const { data, error } = await getSupabase()
+    .from("patient_todos")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("is_done", { ascending: true })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("getPatientTodos error:", error);
+    return [];
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    patientId: row.patient_id,
+    content: row.content,
+    isDone: row.is_done,
+    createdAt: row.created_at,
+    doneAt: row.done_at ?? undefined,
+  }));
+}
+
+/** 全患者の「未完了To-Doあり」マップを取得（一覧バッジ表示用） */
+export async function getPatientsWithPendingTodos(): Promise<Set<string>> {
+  const { data, error } = await getSupabase()
+    .from("patient_todos")
+    .select("patient_id")
+    .eq("is_done", false);
+
+  if (error) {
+    console.error("getPatientsWithPendingTodos error:", error);
+    return new Set();
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new Set((data ?? []).map((row: any) => row.patient_id));
+}
+
+export async function addPatientTodo(patientId: string, content: string): Promise<PatientTodo | null> {
+  const userId = await getCurrentUserId();
+  const { data, error } = await getSupabase()
+    .from("patient_todos")
+    .insert({
+      patient_id: patientId,
+      content,
+      is_done: false,
+      created_by: userId,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("addPatientTodo error:", error);
+    return null;
+  }
+
+  return {
+    id: data.id,
+    patientId: data.patient_id,
+    content: data.content,
+    isDone: data.is_done,
+    createdAt: data.created_at,
+    doneAt: data.done_at ?? undefined,
+  };
+}
+
+export async function togglePatientTodo(id: string, isDone: boolean): Promise<void> {
+  const userId = await getCurrentUserId();
+  const { error } = await getSupabase()
+    .from("patient_todos")
+    .update({
+      is_done: isDone,
+      done_at: isDone ? new Date().toISOString() : null,
+      done_by: isDone ? userId : null,
+    })
+    .eq("id", id);
+
+  if (error) console.error("togglePatientTodo error:", error);
+}
+
+export async function deletePatientTodo(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("patient_todos")
+    .delete()
+    .eq("id", id);
+  if (error) console.error("deletePatientTodo error:", error);
 }
 
 // ---- localStorageからの自動移行 ----
