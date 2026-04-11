@@ -4,7 +4,8 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, type Patient } from "@/lib/storage";
 import { getSupabase } from "@/lib/supabase";
-import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut } from "lucide-react";
+import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut, Settings } from "lucide-react";
+import { getUserRole } from "@/components/AuthGate";
 
 const CARE_LEVEL_BADGE: Record<string, string> = {
   "要支援1": "badge-green",
@@ -149,8 +150,22 @@ export default function PatientsPage() {
               <UserPlus size={16} />
               利用者追加
             </Link>
+            {getUserRole() === "admin" && (
+              <Link
+                href="/admin"
+                className="btn-outline"
+                style={{ padding: "0.5rem", minWidth: "auto" }}
+                title="管理者設定"
+              >
+                <Settings size={16} />
+              </Link>
+            )}
             <button
-              onClick={() => { getSupabase().auth.signOut(); }}
+              onClick={() => {
+                sessionStorage.removeItem("access_verified");
+                sessionStorage.removeItem("user_role");
+                getSupabase().auth.signOut();
+              }}
               className="btn-outline"
               style={{ padding: "0.5rem", minWidth: "auto" }}
               title="ログアウト"
