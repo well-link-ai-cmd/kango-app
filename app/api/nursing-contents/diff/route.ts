@@ -27,27 +27,17 @@ export async function POST(req: NextRequest) {
 
   const carePlanSection = carePlan ? `\n【ケアプラン】\n${carePlan}\n` : "";
 
-  const prompt = `あなたは訪問看護の記録分析AIです。
-現在登録されている看護内容リストと最新の訪問看護記録を比較し、追加すべき項目と削除候補を提案してください。
-${carePlanSection}${currentItemsText}
-${recordsText}
+  const systemPrompt = `看護内容リストの差分分析AI。JSONのみ出力。説明文不要。
+{"additions":["..."],"removals":["..."],"reason":"..."}
+- 追加候補は現在のリストに含まれていない新しい項目のみ
+- 削除候補は記録に最近登場しなくなった項目のみ
+- 変更がない場合は空配列で返す`;
 
-【出力形式】
-以下のJSON形式で出力してください。余分な説明は不要です。
-
-{
-  "additions": ["追加すべきケア項目1", "追加すべきケア項目2"],
-  "removals": ["削除候補のケア項目（現在のリストに含まれるもの）"],
-  "reason": "変更理由の簡潔な説明"
-}
-
-【注意事項】
-・追加候補は現在のリストに含まれていない新しい項目のみ
-・削除候補は記録に最近登場しなくなった項目のみ
-・変更がない場合は空配列で返す`;
+  const prompt = `${carePlanSection}${currentItemsText}
+${recordsText}`;
 
   try {
-    const response = await generateAiResponse(prompt);
+    const response = await generateAiResponse(prompt, systemPrompt);
     const jsonMatch = response.text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       return NextResponse.json({ error: "AIの応答を解析できませんでした" }, { status: 500 });

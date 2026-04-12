@@ -23,30 +23,18 @@ export async function POST(req: NextRequest) {
 
   const carePlanSection = carePlan ? `\n【ケアプラン】\n${carePlan}\n` : "";
 
-  const prompt = `あなたは訪問看護の記録分析AIです。
-以下の訪問看護記録とケアプラン情報から、この利用者に対して定期的に実施している看護内容・ケア項目を抽出してください。
-${carePlanSection}
-${recordsText}
+  const systemPrompt = `看護記録からケア項目を抽出するAI。JSON配列のみ出力。説明文不要。
+["ケア項目1","ケア項目2",...]
+- 記録に繰り返し登場する観察・処置・指導を抽出
+- ケアプランの内容も反映
+- 具体的に書く（✕「健康観察」→○「バイタル測定（血圧・脈拍・体温・SpO2）」）
+- 重要度順。最大15項目`;
 
-【出力形式】
-以下のJSON配列で出力してください。余分な説明は不要です。
-項目は具体的かつ簡潔に（例：「バイタル測定（血圧・脈拍・体温・SpO2）」「褥瘡の観察・処置」「服薬確認・管理」）。
-重要度が高い順に並べてください。
-
-[
-  "ケア項目1",
-  "ケア項目2",
-  ...
-]
-
-【注意事項】
-・記録に繰り返し登場する観察・処置・指導を抽出する
-・ケアプランに記載されている内容も反映する
-・一般的すぎる項目（例：「健康観察」）は避け、具体的に書く
-・最大15項目まで`;
+  const prompt = `${carePlanSection}
+${recordsText}`;
 
   try {
-    const response = await generateAiResponse(prompt);
+    const response = await generateAiResponse(prompt, systemPrompt);
     const jsonMatch = response.text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
       return NextResponse.json({ error: "AIの応答を解析できませんでした" }, { status: 500 });

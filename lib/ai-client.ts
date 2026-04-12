@@ -14,24 +14,32 @@ interface AiResponse {
   text: string;
 }
 
-export async function generateAiResponse(prompt: string): Promise<AiResponse> {
+/**
+ * AI応答を生成する
+ * @param prompt ユーザープロンプト（入力データ中心）
+ * @param systemPrompt システムプロンプト（ロール定義・ルール・出力形式）
+ */
+export async function generateAiResponse(prompt: string, systemPrompt?: string): Promise<AiResponse> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
 
   if (anthropicKey) {
-    return generateWithClaude(anthropicKey, prompt);
+    return generateWithClaude(anthropicKey, prompt, systemPrompt);
   }
 
   if (geminiKey) {
-    return generateWithGemini(geminiKey, prompt);
+    return generateWithGemini(geminiKey, prompt, systemPrompt);
   }
 
   throw new Error("APIキーが設定されていません。.env.local に ANTHROPIC_API_KEY または GEMINI_API_KEY を設定してください。");
 }
 
-async function generateWithGemini(apiKey: string, prompt: string): Promise<AiResponse> {
+async function generateWithGemini(apiKey: string, prompt: string, systemPrompt?: string): Promise<AiResponse> {
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const model = genAI.getGenerativeModel({
+    model: "gemini-1.5-flash",
+    ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
+  });
 
   const timeoutMs = 30000;
   try {
@@ -55,7 +63,7 @@ async function generateWithGemini(apiKey: string, prompt: string): Promise<AiRes
   }
 }
 
-async function generateWithClaude(apiKey: string, prompt: string): Promise<AiResponse> {
+async function generateWithClaude(apiKey: string, prompt: string, systemPrompt?: string): Promise<AiResponse> {
   // Dynamic import to avoid build errors when only using Gemini
   const Anthropic = (await import("@anthropic-ai/sdk")).default;
   const client = new Anthropic({ apiKey });
@@ -65,6 +73,7 @@ async function generateWithClaude(apiKey: string, prompt: string): Promise<AiRes
     client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 4096,
+      ...(systemPrompt ? { system: systemPrompt } : {}),
       messages: [{ role: "user", content: prompt }],
     }),
     new Promise<never>((_, reject) =>
