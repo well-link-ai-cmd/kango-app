@@ -7,7 +7,7 @@ import {
   getPatients, getRecords, getNursingContents, saveNursingContents, generateId,
   type Patient, type SoapRecord, type NursingContents, type NursingContentItem,
 } from "@/lib/storage";
-import { ArrowLeft, Plus, Trash2, Sparkles, RefreshCw, Check, X } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Sparkles, RefreshCw, Check, X, Home } from "lucide-react";
 
 export default function NursingContentsPage() {
   const { id } = useParams<{ id: string }>();
@@ -206,6 +206,9 @@ export default function NursingContentsPage() {
             <h1>看護内容リスト</h1>
             <p className="subtitle">{patient.name} 様</p>
           </div>
+          <Link href="/patients" className="header-action" aria-label="患者一覧へ戻る" title="患者一覧へ戻る">
+            <Home size={20} />
+          </Link>
         </div>
       </header>
 

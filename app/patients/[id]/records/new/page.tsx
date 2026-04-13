@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getPatients, getRecords, saveRecord, generateId, soapToText, textToSoap, getNursingContents, saveNursingContents, type Patient, type SoapRecord, type NursingContentItem } from "@/lib/storage";
-import { ArrowLeft, Sparkles, Save, AlertTriangle, MessageSquare, Check, Plus, X } from "lucide-react";
+import { ArrowLeft, Sparkles, Save, AlertTriangle, MessageSquare, Check, Plus, X, Home } from "lucide-react";
 import Link from "next/link";
 
 interface Soap { S: string; O: string; A: string; P: string; }
@@ -265,6 +265,9 @@ export default function NewRecordPage() {
             <h1>訪問記録を作成</h1>
             {patient && <p className="subtitle">{patient.name} 様</p>}
           </div>
+          <Link href="/patients" className="header-action" aria-label="患者一覧へ戻る" title="患者一覧へ戻る">
+            <Home size={20} />
+          </Link>
         </div>
         {/* Step Indicator */}
         <div className="max-w-2xl mx-auto px-4 pb-3">
