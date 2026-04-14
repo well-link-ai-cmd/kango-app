@@ -306,7 +306,10 @@ export async function saveRecord(record: SoapRecord): Promise<void> {
   const { error } = await getSupabase()
     .from("soap_records")
     .upsert(row, { onConflict: "id" });
-  if (error) console.error("saveRecord error:", error);
+  if (error) {
+    console.error("saveRecord error:", error);
+    throw new Error(error.message);
+  }
 }
 
 export async function deleteRecord(id: string): Promise<void> {
