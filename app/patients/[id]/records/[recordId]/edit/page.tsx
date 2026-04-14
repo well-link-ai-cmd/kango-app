@@ -61,6 +61,7 @@ export default function EditRecordPage() {
         A: parsed.A,
         P: parsed.P,
       });
+      router.refresh();
       router.push(`/patients/${id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存に失敗しました");
