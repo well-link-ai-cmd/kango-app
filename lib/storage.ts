@@ -58,7 +58,11 @@ export interface Patient {
   careManagerPhone?: string;
 
   // ケアプラン・担当者会議内容（AI精度向上用）
-  carePlan?: string;          // ケアプラン・担当者会議での方針
+  carePlan?: string;          // ケアプラン・担当者会議での方針（看護計画は nursing_plans テーブルで別管理）
+
+  // 看護計画の定期評価スケジュール
+  nextEvaluationDate?: string;        // 次回評価予定日（YYYY-MM-DD）。未設定ならアラート対象外
+  evaluationCycleMonths?: number;     // 評価周期（月）。デフォルト6
 
   // 導入時に貼り付ける直近のSOAP記録（初回からAIの精度を上げる）
   initialSoapRecords?: {
@@ -170,6 +174,8 @@ function patientToRow(p: Patient, userId?: string): Record<string, any> {
     care_manager_address: p.careManagerAddress ?? null,
     care_manager_phone: p.careManagerPhone ?? null,
     care_plan: p.carePlan ?? null,
+    next_evaluation_date: p.nextEvaluationDate ?? null,
+    evaluation_cycle_months: p.evaluationCycleMonths ?? null,
     initial_soap_records: p.initialSoapRecords ?? null,
     created_at: p.createdAt,
   };
@@ -210,6 +216,8 @@ function rowToPatient(row: any): Patient {
     doctors: doctors.length > 0 ? doctors : undefined,
     careManagers: careManagers.length > 0 ? careManagers : undefined,
     carePlan: row.care_plan ?? undefined,
+    nextEvaluationDate: row.next_evaluation_date ?? undefined,
+    evaluationCycleMonths: row.evaluation_cycle_months ?? undefined,
     initialSoapRecords: row.initial_soap_records ?? undefined,
     createdAt: row.created_at,
   };

@@ -24,6 +24,9 @@ export default function NewPatientPage() {
   const [openCareManager, setOpenCareManager] = useState(false);
   const [carePlan, setCarePlan] = useState("");
   const [openCarePlan, setOpenCarePlan] = useState(false);
+  const [nextEvaluationDate, setNextEvaluationDate] = useState("");
+  const [evaluationCycleMonths, setEvaluationCycleMonths] = useState<number>(6);
+  const [openEvaluation, setOpenEvaluation] = useState(false);
 
   // 直近のSOAP記録（導入時の初期データ）— 1つのtextareaに統合
   const [openInitialSoap, setOpenInitialSoap] = useState(false);
@@ -57,6 +60,8 @@ export default function NewPatientPage() {
       careManagers: careManagersList.filter(c => c.name.trim() || c.office.trim()).length > 0
         ? careManagersList.filter(c => c.name.trim() || c.office.trim()) : undefined,
       carePlan: carePlan.trim() || undefined,
+      nextEvaluationDate: nextEvaluationDate || undefined,
+      evaluationCycleMonths: evaluationCycleMonths || 6,
       initialSoapRecords: initialSoapRecords.length > 0 ? initialSoapRecords : undefined,
       createdAt: new Date().toISOString(),
     });
@@ -258,7 +263,7 @@ export default function NewPatientPage() {
             >
               <div className="text-left">
                 <p className="font-semibold" style={{ color: "var(--text-primary)" }}>ケアプラン・訪問方針</p>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>入力するとAIのSOAP変換精度が上がります（任意）</p>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>ケアマネ会議の方針・介入理由等（任意）。看護計画は登録後の詳細画面で別途管理します。</p>
               </div>
               {openCarePlan
                 ? <ChevronUp size={18} style={{ color: "var(--text-muted)" }} />
@@ -276,6 +281,53 @@ export default function NewPatientPage() {
                   value={carePlan}
                   onChange={(e) => setCarePlan(e.target.value)}
                 />
+              </div>
+            )}
+          </div>
+
+          {/* Evaluation Schedule */}
+          <div className="card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOpenEvaluation(!openEvaluation)}
+              className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-[rgba(0,200,200,0.02)]"
+            >
+              <div className="text-left">
+                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>看護計画の評価スケジュール</p>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>次回評価予定日と評価周期を設定（任意。未設定ならアラートなし）</p>
+              </div>
+              {openEvaluation
+                ? <ChevronUp size={18} style={{ color: "var(--text-muted)" }} />
+                : <ChevronDown size={18} style={{ color: "var(--text-muted)" }} />}
+            </button>
+            {openEvaluation && (
+              <div className="px-5 pb-5 space-y-3 animate-fade-in">
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  既に動いている利用者は、次に評価予定の日付を直接入力してください。新規の場合は空欄でもOKです（初回計画登録時に自動設定可）。
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>次回評価予定日</label>
+                    <input
+                      type="date"
+                      className="input-field text-sm mt-1"
+                      value={nextEvaluationDate}
+                      onChange={(e) => setNextEvaluationDate(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>評価周期</label>
+                    <select
+                      className="input-field text-sm mt-1"
+                      value={evaluationCycleMonths}
+                      onChange={(e) => setEvaluationCycleMonths(parseInt(e.target.value))}
+                    >
+                      <option value={3}>3ヶ月</option>
+                      <option value={6}>6ヶ月（推奨）</option>
+                      <option value={12}>12ヶ月</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             )}
           </div>
