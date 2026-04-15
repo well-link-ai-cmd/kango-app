@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getPatients, getRecords, saveRecord, generateId, soapToText, textToSoap, getNursingContents, saveNursingContents, type Patient, type SoapRecord, type NursingContentItem } from "@/lib/storage";
-import { ArrowLeft, Sparkles, Save, AlertTriangle, MessageSquare, Check, Plus, X, Home } from "lucide-react";
+import { saveDraft, loadDraft, clearDraft, isDraftEmpty, formatDraftTime, type SoapDraft } from "@/lib/draft-storage";
+import { ArrowLeft, Sparkles, Save, AlertTriangle, MessageSquare, Check, Plus, X, Home, FileText, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 interface Soap { S: string; O: string; A: string; P: string; }
@@ -39,6 +40,15 @@ export default function NewRecordPage() {
   const [step, setStep] = useState<Step>("input");
   const [error, setError] = useState("");
 
+  // ---- 下書き自動保存 ----
+  // 復元待ちの下書き（ユーザーが「続きから」か「破棄」を選ぶまで保持）
+  const [draftToRestore, setDraftToRestore] = useState<SoapDraft | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  // 初期化完了フラグ（mount直後の空stateで下書きを上書きしないため）
+  const [initialLoaded, setInitialLoaded] = useState(false);
+  // 記録保存済みフラグ（保存後〜画面遷移までの間に下書き再生成を抑制）
+  const [recordSaved, setRecordSaved] = useState(false);
+
   useEffect(() => {
     (async () => {
       const p = (await getPatients()).find((p) => p.id === id) ?? null;
@@ -47,8 +57,68 @@ export default function NewRecordPage() {
       setRecentRecords(records.sort((a, b) => b.visitDate.localeCompare(a.visitDate)).slice(0, 3));
       const nc = await getNursingContents(id);
       if (nc) setNursingItems(nc.items.filter(item => item.isActive));
+      // 既存の下書きがあれば復元候補としてセット（自動復元はせず、ユーザーに選ばせる）
+      const existing = loadDraft(id);
+      if (existing && !isDraftEmpty(existing)) {
+        setDraftToRestore(existing);
+      }
+      setInitialLoaded(true);
     })();
   }, [id]);
+
+  // 入力内容の変化に応じて下書きを自動保存（500ms debounce）
+  useEffect(() => {
+    if (!initialLoaded) return;
+    // 復元待ちの間は保存しない（ユーザー決定前に既存下書きを消さない）
+    if (draftToRestore) return;
+    // 記録保存後は下書きを再生成しない
+    if (recordSaved) return;
+
+    const draft: SoapDraft = {
+      patientId: id,
+      visitDate,
+      sInput,
+      rawInput,
+      alerts,
+      alertAnswers,
+      questionAnswers,
+      soap,
+      soapText,
+      step,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // 空ならlocalStorageに書かず、既存下書きがあれば残す（後述のuseEffectで記録保存時に削除）
+    if (isDraftEmpty(draft)) return;
+
+    const handle = setTimeout(() => {
+      saveDraft(draft);
+      setLastSavedAt(draft.updatedAt);
+    }, 500);
+    return () => clearTimeout(handle);
+  }, [initialLoaded, draftToRestore, recordSaved, id, visitDate, sInput, rawInput, alerts, alertAnswers, questionAnswers, soap, soapText, step]);
+
+  function restoreDraft() {
+    if (!draftToRestore) return;
+    setVisitDate(draftToRestore.visitDate);
+    setSInput(draftToRestore.sInput);
+    setRawInput(draftToRestore.rawInput);
+    setAlerts(draftToRestore.alerts);
+    setAlertAnswers(draftToRestore.alertAnswers);
+    setQuestionAnswers(draftToRestore.questionAnswers);
+    setSoap(draftToRestore.soap);
+    setSoapText(draftToRestore.soapText);
+    setStep(draftToRestore.step);
+    setLastSavedAt(draftToRestore.updatedAt);
+    setDraftToRestore(null);
+  }
+
+  function discardDraft() {
+    if (!confirm("保存されている入力途中のデータを破棄します。よろしいですか？")) return;
+    clearDraft(id);
+    setDraftToRestore(null);
+    setLastSavedAt(null);
+  }
 
   // 過去記録またはケア内容があれば確認質問を使える
   const hasContextForQuestions = recentRecords.length > 0
@@ -165,6 +235,10 @@ export default function NewRecordPage() {
       P: parsed.P,
       createdAt: new Date().toISOString(),
     });
+    // 記録を正式保存できたので下書きは破棄し、以降の自動保存を止める
+    clearDraft(id);
+    setRecordSaved(true);
+    setLastSavedAt(null);
 
     // ケア内容が登録済み & 記録が3件以上ある場合のみdiff分析を実行（AIコスト削減）
     const allRecords = await getRecords(id);
@@ -302,6 +376,57 @@ export default function NewRecordPage() {
 
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-5 relative z-[1]">
         {error && <div className="alert-error animate-fade-in">{error}</div>}
+
+        {/* 下書き復元バナー */}
+        {draftToRestore && (
+          <div
+            className="card p-4 animate-fade-in"
+            style={{ borderLeft: "3px solid var(--accent-cyan)", background: "rgba(0,200,200,0.04)" }}
+          >
+            <div className="flex items-start gap-3">
+              <FileText size={20} style={{ color: "var(--accent-cyan)", marginTop: "2px" }} />
+              <div className="flex-1">
+                <p className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
+                  入力途中のデータがあります
+                </p>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                  {formatDraftTime(draftToRestore.updatedAt)} に自動保存された下書きが残っています。
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={restoreDraft}
+                    className="btn-primary"
+                    style={{ padding: "0.5rem 1rem", fontSize: "0.875rem" }}
+                  >
+                    <Check size={16} />
+                    続きから再開
+                  </button>
+                  <button
+                    type="button"
+                    onClick={discardDraft}
+                    className="btn-outline"
+                    style={{ padding: "0.5rem 1rem", fontSize: "0.875rem" }}
+                  >
+                    <Trash2 size={16} />
+                    破棄する
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 自動保存インジケータ */}
+        {lastSavedAt && !draftToRestore && (
+          <p
+            className="text-xs text-right"
+            style={{ color: "var(--text-muted)", marginTop: "-0.5rem" }}
+            aria-live="polite"
+          >
+            自動保存: {formatDraftTime(lastSavedAt)}
+          </p>
+        )}
 
         {/* ===== STEP 1: Input ===== */}
         {step === "input" && (
