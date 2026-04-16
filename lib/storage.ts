@@ -515,6 +515,213 @@ export async function deletePatientTodo(id: string): Promise<void> {
   if (error) console.error("deletePatientTodo error:", error);
 }
 
+// ============================================================
+// 褥瘡計画書（褥瘡対策に関する看護計画書）
+//
+// AI責任分界:
+//   - DESIGN-R, 危険因子, 日常生活自立度 → 看護師手入力
+//   - 看護計画5軸のテキスト → AI下書き → 看護師確認・修正
+// ============================================================
+
+/** 日常生活自立度 */
+export type DailyLifeLevel = "J1" | "J2" | "A1" | "A2" | "B1" | "B2" | "C1" | "C2";
+
+/** 危険因子評価（7項目） */
+export interface RiskFactors {
+  basicMobilityBed?: "できる" | "できない";        // 基本的動作能力（ベッド上の自力体位変換）
+  basicMobilityChair?: "できる" | "できない";      // 基本的動作能力（イス上の座位保持・除圧）
+  bonyProminence?: "なし" | "あり";                // 病的骨突出
+  contracture?: "なし" | "あり";                   // 関節拘縮
+  nutrition?: "なし" | "あり";                     // 栄養状態低下
+  moisture?: "なし" | "あり";                      // 皮膚湿潤
+  fragileSkin?: "なし" | "あり";                   // 皮膚の脆弱性
+}
+
+/** DESIGN-R®2020 採点（看護師手入力・AI禁止） */
+export interface DesignR {
+  d?: "d0" | "d1" | "d2" | "D3" | "D4" | "D5" | "DDTI" | "DU";  // 深さ（合計除外）
+  e?: "e0" | "e1" | "e3" | "E6";                                  // 滲出液
+  s?: "s0" | "s3" | "s6" | "s8" | "s9" | "s12" | "S15";          // 大きさ
+  i?: "i0" | "i1" | "I3" | "I3C" | "I9";                          // 炎症・感染
+  g?: "g0" | "g1" | "g3" | "G4" | "G5" | "G6";                    // 肉芽
+  n?: "n0" | "N3" | "N6";                                         // 壊死組織
+  p?: "p0" | "P6" | "P9" | "P12" | "P24";                         // ポケット
+  total?: number;                                                 // 合計点（0-66、Dを除く）
+}
+
+/** 褥瘡部位 */
+export type UlcerLocation = "仙骨部" | "坐骨部" | "尾骨部" | "腸骨部" | "大転子部" | "踵部" | "その他";
+
+/** 褥瘡計画書 */
+export interface PressureUlcerPlan {
+  id: string;
+  patientId: string;
+
+  // 監査情報
+  createdAt: string;
+  updatedAt: string;
+
+  // 基本情報
+  planDate: string;                 // 計画作成日 YYYY-MM-DD
+  nextReviewDate?: string;          // 次回評価日 YYYY-MM-DD
+  staffName?: string;               // 記入看護師名
+  staffTitle?: string;              // 肩書き
+
+  // 判定（看護師入力）
+  dailyLifeLevel?: DailyLifeLevel;
+  riskFactors: RiskFactors;
+  ohScaleScore?: number;            // 0-10
+
+  // 現在の褥瘡
+  hasCurrentUlcer: boolean;
+  currentLocations: UlcerLocation[];
+  currentOnsetDate?: string;
+
+  // 過去の褥瘡
+  hasPastUlcer: boolean;
+  pastLocations: UlcerLocation[];
+  pastHealedDate?: string;
+
+  // DESIGN-R（看護師手入力・AI禁止）
+  designR: DesignR;
+
+  // 看護計画（AI下書き→看護師修正、各1000字以内）
+  planBed?: string;
+  planChair?: string;
+  planSkincare?: string;
+  planNutrition?: string;
+  planRehab?: string;
+
+  // 評価記録
+  evaluationNotes?: string;
+
+  // AI生成メタ情報
+  aiModel?: string;
+  aiPromptVersion?: string;
+  aiGeneratedAt?: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pressureUlcerPlanFromRow(row: any): PressureUlcerPlan {
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    planDate: row.plan_date,
+    nextReviewDate: row.next_review_date ?? undefined,
+    staffName: row.staff_name ?? undefined,
+    staffTitle: row.staff_title ?? undefined,
+    dailyLifeLevel: row.daily_life_level ?? undefined,
+    riskFactors: row.risk_factors ?? {},
+    ohScaleScore: row.oh_scale_score ?? undefined,
+    hasCurrentUlcer: row.has_current_ulcer,
+    currentLocations: row.current_locations ?? [],
+    currentOnsetDate: row.current_onset_date ?? undefined,
+    hasPastUlcer: row.has_past_ulcer,
+    pastLocations: row.past_locations ?? [],
+    pastHealedDate: row.past_healed_date ?? undefined,
+    designR: row.design_r ?? {},
+    planBed: row.plan_bed ?? undefined,
+    planChair: row.plan_chair ?? undefined,
+    planSkincare: row.plan_skincare ?? undefined,
+    planNutrition: row.plan_nutrition ?? undefined,
+    planRehab: row.plan_rehab ?? undefined,
+    evaluationNotes: row.evaluation_notes ?? undefined,
+    aiModel: row.ai_model ?? undefined,
+    aiPromptVersion: row.ai_prompt_version ?? undefined,
+    aiGeneratedAt: row.ai_generated_at ?? undefined,
+  };
+}
+
+/** 患者の褥瘡計画書一覧（新しい順） */
+export async function getPressureUlcerPlans(patientId: string): Promise<PressureUlcerPlan[]> {
+  const { data, error } = await getSupabase()
+    .from("pressure_ulcer_plans")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("plan_date", { ascending: false });
+
+  if (error) {
+    console.error("getPressureUlcerPlans error:", error);
+    return [];
+  }
+  return (data ?? []).map(pressureUlcerPlanFromRow);
+}
+
+/** 単一の褥瘡計画書を取得 */
+export async function getPressureUlcerPlan(id: string): Promise<PressureUlcerPlan | null> {
+  const { data, error } = await getSupabase()
+    .from("pressure_ulcer_plans")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getPressureUlcerPlan error:", error);
+    return null;
+  }
+  return data ? pressureUlcerPlanFromRow(data) : null;
+}
+
+/** 新規作成（id未指定）または更新（id指定） */
+export async function savePressureUlcerPlan(
+  plan: Omit<PressureUlcerPlan, "id" | "createdAt" | "updatedAt"> & { id?: string }
+): Promise<PressureUlcerPlan | null> {
+  const userId = await getCurrentUserId();
+
+  const row = {
+    ...(plan.id ? { id: plan.id } : {}),
+    patient_id: plan.patientId,
+    plan_date: plan.planDate,
+    next_review_date: plan.nextReviewDate ?? null,
+    staff_name: plan.staffName ?? null,
+    staff_title: plan.staffTitle ?? null,
+    daily_life_level: plan.dailyLifeLevel ?? null,
+    risk_factors: plan.riskFactors ?? {},
+    oh_scale_score: plan.ohScaleScore ?? null,
+    has_current_ulcer: plan.hasCurrentUlcer,
+    current_locations: plan.currentLocations ?? [],
+    current_onset_date: plan.currentOnsetDate ?? null,
+    has_past_ulcer: plan.hasPastUlcer,
+    past_locations: plan.pastLocations ?? [],
+    past_healed_date: plan.pastHealedDate ?? null,
+    design_r: plan.designR ?? {},
+    plan_bed: plan.planBed ?? null,
+    plan_chair: plan.planChair ?? null,
+    plan_skincare: plan.planSkincare ?? null,
+    plan_nutrition: plan.planNutrition ?? null,
+    plan_rehab: plan.planRehab ?? null,
+    evaluation_notes: plan.evaluationNotes ?? null,
+    ai_model: plan.aiModel ?? null,
+    ai_prompt_version: plan.aiPromptVersion ?? null,
+    ai_generated_at: plan.aiGeneratedAt ?? null,
+    user_id: userId,
+    ...(plan.id ? {} : { created_by: userId }),
+  };
+
+  const { data, error } = await getSupabase()
+    .from("pressure_ulcer_plans")
+    .upsert(row)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("savePressureUlcerPlan error:", error);
+    return null;
+  }
+  return pressureUlcerPlanFromRow(data);
+}
+
+/** 削除 */
+export async function deletePressureUlcerPlan(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("pressure_ulcer_plans")
+    .delete()
+    .eq("id", id);
+  if (error) console.error("deletePressureUlcerPlan error:", error);
+}
+
 // ---- localStorageからの自動移行 ----
 
 const MIGRATION_KEY = "kango_migrated_to_supabase";
