@@ -22,7 +22,14 @@ import {
   type DesignR,
   type SoapRecord,
 } from "@/lib/storage";
-import { ArrowLeft, AlertTriangle, Stethoscope, Sparkles, Save, Copy, Loader2 } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Stethoscope, Sparkles, Save, Copy, Loader2, HelpCircle, Calculator } from "lucide-react";
+import {
+  DailyLifeLevelHelp,
+  OhScaleHelp,
+  RiskFactorGeneralHelp,
+  RISK_FACTOR_HINTS,
+  DesignRHelp,
+} from "./help-content";
 
 // AI応答型
 interface AiPlanResponse {
@@ -130,6 +137,39 @@ export default function NewPressureUlcerPlanPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // ヘルプ表示トグル
+  const [helpOpen, setHelpOpen] = useState<Record<string, boolean>>({});
+  const [riskFactorHintOpen, setRiskFactorHintOpen] = useState<Record<string, boolean>>({});
+
+  // OHスケール計算機
+  const [ohCalcOpen, setOhCalcOpen] = useState(false);
+  const [ohCalc, setOhCalc] = useState<{
+    mobility: number | null;
+    bonyProminence: number | null;
+    edema: number | null;
+    contracture: number | null;
+  }>({ mobility: null, bonyProminence: null, edema: null, contracture: null });
+
+  function toggleHelp(key: string) {
+    setHelpOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function toggleRiskHint(key: string) {
+    setRiskFactorHintOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  // OHスケール自動計算：全項目選ばれたら合計をohScaleScoreに反映
+  function updateOhCalc(field: keyof typeof ohCalc, value: number) {
+    const next = { ...ohCalc, [field]: value };
+    setOhCalc(next);
+    const allSet = Object.values(next).every((v) => v !== null);
+    if (allSet) {
+      const total = (next.mobility ?? 0) + (next.bonyProminence ?? 0) + (next.edema ?? 0) + (next.contracture ?? 0);
+      // 小数点が出るので四捨五入で整数化（0-10）
+      setOhScaleScore(String(Math.round(total)));
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -396,12 +436,24 @@ export default function NewPressureUlcerPlanPage() {
 
         {/* 日常生活自立度 */}
         <section className="card p-5 space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-            日常生活自立度 <span className="text-red-500">*</span>
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+              日常生活自立度 <span className="text-red-500">*</span>
+            </h2>
+            <button
+              type="button"
+              onClick={() => toggleHelp("dailyLife")}
+              className="text-xs flex items-center gap-1 px-2 py-1 rounded border hover:bg-gray-50"
+              style={{ borderColor: "rgba(0,0,0,0.1)", color: "var(--text-muted)" }}
+            >
+              <HelpCircle size={12} />
+              {helpOpen["dailyLife"] ? "基準を閉じる" : "判定基準を見る"}
+            </button>
+          </div>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
             A2以下は計画立案不要。B1以上で作成必須。
           </p>
+          {helpOpen["dailyLife"] && <DailyLifeLevelHelp />}
           <div className="grid grid-cols-4 gap-2">
             {DAILY_LIFE_LEVELS.map((level) => (
               <button
@@ -433,57 +485,185 @@ export default function NewPressureUlcerPlanPage() {
           <>
             {/* OHスケール */}
             <section className="card p-5 space-y-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                OHスケール点数 <span className="text-red-500">*</span>
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                  OHスケール点数 <span className="text-red-500">*</span>
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => toggleHelp("ohScale")}
+                  className="text-xs flex items-center gap-1 px-2 py-1 rounded border hover:bg-gray-50"
+                  style={{ borderColor: "rgba(0,0,0,0.1)", color: "var(--text-muted)" }}
+                >
+                  <HelpCircle size={12} />
+                  {helpOpen["ohScale"] ? "基準を閉じる" : "判定基準を見る"}
+                </button>
+              </div>
               <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                 0-10点。分類: 0=なし / 1-3=軽度 / 4-6=中等度 / 7-10=高度
               </p>
-              <input
-                type="number"
-                min={0}
-                max={10}
-                value={ohScaleScore}
-                onChange={(e) => setOhScaleScore(e.target.value)}
-                placeholder="0〜10"
-                className="w-full sm:w-32 px-3 py-2 border rounded-lg text-sm"
-                style={{ borderColor: "rgba(0,0,0,0.1)" }}
-              />
+              {helpOpen["ohScale"] && <OhScaleHelp />}
+
+              {/* 直接入力 */}
+              <div className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min={0}
+                  max={10}
+                  value={ohScaleScore}
+                  onChange={(e) => setOhScaleScore(e.target.value)}
+                  placeholder="0〜10"
+                  className="w-32 px-3 py-2 border rounded-lg text-sm"
+                  style={{ borderColor: "rgba(0,0,0,0.1)" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setOhCalcOpen(!ohCalcOpen)}
+                  className="text-xs flex items-center gap-1 px-3 py-2 rounded-lg border hover:bg-gray-50"
+                  style={{ borderColor: "rgba(0,0,0,0.1)", color: "var(--text-secondary)" }}
+                >
+                  <Calculator size={14} />
+                  {ohCalcOpen ? "計算機を閉じる" : "自動計算で入力"}
+                </button>
+              </div>
+
+              {/* OHスケール計算機 */}
+              {ohCalcOpen && (
+                <div className="mt-3 p-4 rounded-lg space-y-3 animate-fade-in" style={{ background: "rgba(99, 102, 241, 0.05)", border: "1px solid rgba(99, 102, 241, 0.15)" }}>
+                  <p className="text-xs font-semibold" style={{ color: "#4338CA" }}>4項目を選択すると自動で合計点が入力されます</p>
+
+                  {/* ① 自力体位変換能力 */}
+                  <div>
+                    <p className="text-xs font-semibold mb-2">① 自力体位変換能力</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[{ label: "できる", val: 0 }, { label: "どちらでもない", val: 1.5 }, { label: "できない", val: 3 }].map((o) => (
+                        <button key={o.val} type="button" onClick={() => updateOhCalc("mobility", o.val)}
+                          className={`px-3 py-1.5 text-xs rounded-lg border ${ohCalc.mobility === o.val ? "bg-indigo-500 text-white border-indigo-500" : "bg-white hover:bg-gray-50"}`}
+                          style={{ borderColor: ohCalc.mobility === o.val ? undefined : "rgba(0,0,0,0.1)" }}>
+                          {o.label}（{o.val}）
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ② 病的骨突出 */}
+                  <div>
+                    <p className="text-xs font-semibold mb-2">② 病的骨突出（仙骨部）</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[{ label: "なし", val: 0 }, { label: "軽度・中等度", val: 1.5 }, { label: "高度", val: 3 }].map((o) => (
+                        <button key={o.val} type="button" onClick={() => updateOhCalc("bonyProminence", o.val)}
+                          className={`px-3 py-1.5 text-xs rounded-lg border ${ohCalc.bonyProminence === o.val ? "bg-indigo-500 text-white border-indigo-500" : "bg-white hover:bg-gray-50"}`}
+                          style={{ borderColor: ohCalc.bonyProminence === o.val ? undefined : "rgba(0,0,0,0.1)" }}>
+                          {o.label}（{o.val}）
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ③ 浮腫 */}
+                  <div>
+                    <p className="text-xs font-semibold mb-2">③ 浮腫</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[{ label: "なし", val: 0 }, { label: "あり", val: 3 }].map((o) => (
+                        <button key={o.val} type="button" onClick={() => updateOhCalc("edema", o.val)}
+                          className={`px-3 py-1.5 text-xs rounded-lg border ${ohCalc.edema === o.val ? "bg-indigo-500 text-white border-indigo-500" : "bg-white hover:bg-gray-50"}`}
+                          style={{ borderColor: ohCalc.edema === o.val ? undefined : "rgba(0,0,0,0.1)" }}>
+                          {o.label}（{o.val}）
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ④ 関節拘縮 */}
+                  <div>
+                    <p className="text-xs font-semibold mb-2">④ 関節拘縮</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[{ label: "なし", val: 0 }, { label: "あり", val: 1 }].map((o) => (
+                        <button key={o.val} type="button" onClick={() => updateOhCalc("contracture", o.val)}
+                          className={`px-3 py-1.5 text-xs rounded-lg border ${ohCalc.contracture === o.val ? "bg-indigo-500 text-white border-indigo-500" : "bg-white hover:bg-gray-50"}`}
+                          style={{ borderColor: ohCalc.contracture === o.val ? undefined : "rgba(0,0,0,0.1)" }}>
+                          {o.label}（{o.val}）
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 合計表示 */}
+                  {Object.values(ohCalc).every((v) => v !== null) && (
+                    <div className="pt-2 border-t" style={{ borderColor: "rgba(99, 102, 241, 0.2)" }}>
+                      <p className="text-xs">
+                        合計: <strong>{((ohCalc.mobility ?? 0) + (ohCalc.bonyProminence ?? 0) + (ohCalc.edema ?? 0) + (ohCalc.contracture ?? 0)).toFixed(1)}</strong> 点
+                        （四捨五入で <strong>{Math.round((ohCalc.mobility ?? 0) + (ohCalc.bonyProminence ?? 0) + (ohCalc.edema ?? 0) + (ohCalc.contracture ?? 0))}</strong> 点を上の欄に反映）
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             {/* 危険因子 */}
             <section className="card p-5 space-y-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                危険因子評価（7項目）
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                  危険因子評価（7項目）
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => toggleHelp("riskFactor")}
+                  className="text-xs flex items-center gap-1 px-2 py-1 rounded border hover:bg-gray-50"
+                  style={{ borderColor: "rgba(0,0,0,0.1)", color: "var(--text-muted)" }}
+                >
+                  <HelpCircle size={12} />
+                  {helpOpen["riskFactor"] ? "基準を閉じる" : "判定基準を見る"}
+                </button>
+              </div>
               <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                 1項目でも「あり／できない」なら看護計画立案が必須
               </p>
+              {helpOpen["riskFactor"] && <RiskFactorGeneralHelp />}
               <div className="space-y-3">
                 {RISK_FACTORS.map((f) => (
-                  <div key={f.key} className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                    <label className="flex-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-                      {f.label}
-                    </label>
-                    <div className="flex gap-2">
-                      {f.options.map((opt) => (
+                  <div key={f.key} className="space-y-2">
+                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                      <div className="flex-1 flex items-center gap-2">
+                        <label className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                          {f.label}
+                        </label>
                         <button
-                          key={opt}
                           type="button"
-                          onClick={() => setRiskFactors({ ...riskFactors, [f.key]: opt })}
-                          className={`px-3 py-1.5 text-xs rounded-lg border transition ${
-                            riskFactors[f.key] === opt
-                              ? opt === "あり" || opt === "できない"
-                                ? "bg-orange-500 text-white border-orange-500"
-                                : "bg-emerald-500 text-white border-emerald-500"
-                              : "bg-white hover:bg-gray-50"
-                          }`}
-                          style={{ borderColor: riskFactors[f.key] === opt ? undefined : "rgba(0,0,0,0.1)" }}
+                          onClick={() => toggleRiskHint(f.key)}
+                          className="text-xs hover:text-blue-600 flex-shrink-0"
+                          style={{ color: "var(--text-muted)" }}
+                          aria-label="判断のヒント"
                         >
-                          {opt}
+                          <HelpCircle size={14} />
                         </button>
-                      ))}
+                      </div>
+                      <div className="flex gap-2">
+                        {f.options.map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => setRiskFactors({ ...riskFactors, [f.key]: opt })}
+                            className={`px-3 py-1.5 text-xs rounded-lg border transition ${
+                              riskFactors[f.key] === opt
+                                ? opt === "あり" || opt === "できない"
+                                  ? "bg-orange-500 text-white border-orange-500"
+                                  : "bg-emerald-500 text-white border-emerald-500"
+                                : "bg-white hover:bg-gray-50"
+                            }`}
+                            style={{ borderColor: riskFactors[f.key] === opt ? undefined : "rgba(0,0,0,0.1)" }}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
                     </div>
+                    {riskFactorHintOpen[f.key] && (
+                      <div className="p-3 rounded text-xs animate-fade-in" style={{ background: "rgba(56, 189, 248, 0.08)", color: "var(--text-secondary)" }}>
+                        💡 {RISK_FACTOR_HINTS[f.key]}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -611,13 +791,25 @@ export default function NewPressureUlcerPlanPage() {
             {/* DESIGN-R（現在の褥瘡ありの場合のみ） */}
             {hasCurrentUlcer && (
               <section className="card p-5 space-y-3" style={{ borderLeft: "4px solid #FFC107" }}>
-                <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-                  DESIGN-R®2020 採点
-                  <span className="ml-2 text-xs font-normal" style={{ color: "#E65100" }}>（看護師手入力・AI不可）</span>
-                </h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+                    DESIGN-R®2020 採点
+                    <span className="ml-2 text-xs font-normal" style={{ color: "#E65100" }}>（看護師手入力・AI不可）</span>
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => toggleHelp("designR")}
+                    className="text-xs flex items-center gap-1 px-2 py-1 rounded border hover:bg-gray-50"
+                    style={{ borderColor: "rgba(0,0,0,0.1)", color: "var(--text-muted)" }}
+                  >
+                    <HelpCircle size={12} />
+                    {helpOpen["designR"] ? "基準を閉じる" : "判定基準を見る"}
+                  </button>
+                </div>
                 <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                   観察・触診に基づき採点してください。小文字=軽症、大文字=重症。
                 </p>
+                {helpOpen["designR"] && <DesignRHelp />}
                 <div className="grid grid-cols-1 gap-3">
                   {(Object.keys(DESIGN_R_OPTIONS) as Array<keyof typeof DESIGN_R_OPTIONS>).map((key) => (
                     <div key={key}>
