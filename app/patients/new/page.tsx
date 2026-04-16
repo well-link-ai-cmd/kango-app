@@ -42,7 +42,9 @@ export default function NewPatientPage() {
       { text: initialSoapText2, visitDate: initialSoapDate2 },
     ]
       .filter(s => s.text.trim())
-      .map(s => ({ ...textToSoap(s.text), visitDate: s.visitDate }));
+      .map(s => ({ ...textToSoap(s.text), visitDate: s.visitDate }))
+      // SOAP 4フィールドが全部空のレコードは保存しない（再表示時に頭文字だけ残るのを防ぐ）
+      .filter(r => r.S.trim() || r.O.trim() || r.A.trim() || r.P.trim());
 
     await savePatient({
       id: generateId(),

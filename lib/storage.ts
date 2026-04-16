@@ -81,12 +81,15 @@ export function textToSoap(text: string): { S: string; O: string; A: string; P: 
   const result = { S: "", O: "", A: "", P: "" };
   const lines = text.split("\n");
   let current: "S" | "O" | "A" | "P" | null = null;
+  let markerFound = false;
+  const preambleLines: string[] = []; // S:/O:/A:/P: マーカー検出前の行を退避
   for (const line of lines) {
     // 行頭に話者プレフィックス（例：「姉S:」「夫S:」「ご家族S:」）が付いていても
     // SOAP行として拾えるようにする。プレフィックスがある場合は発話者情報を
     // 失わないよう本文に残して保存する。
     const match = line.match(/^(.{0,5}?)([SOAP])[:：]\s*/);
     if (match) {
+      markerFound = true;
       const prefix = match[1];
       const letter = match[2] as "S" | "O" | "A" | "P";
       const rest = line.slice(match[0].length);
@@ -102,6 +105,21 @@ export function textToSoap(text: string): { S: string; O: string; A: string; P: 
       }
     } else if (current) {
       result[current] += (result[current] ? "\n" : "") + line;
+    } else {
+      // まだ S:/O:/A:/P: マーカーが現れていない前置き行。捨てずに退避する
+      preambleLines.push(line);
+    }
+  }
+  // マーカーが1つも検出されなかった場合、入力テキストを丸ごと S に入れて
+  // ユーザーの貼り付け内容が消失しないようにする（フリー形式対応）
+  if (!markerFound) {
+    return { S: text.trim(), O: "", A: "", P: "" };
+  }
+  // 前置き行があれば S の先頭に差し込む（訪問日メモ等を失わないため）
+  if (preambleLines.length > 0) {
+    const preamble = preambleLines.join("\n").trim();
+    if (preamble) {
+      result.S = result.S ? `${preamble}\n${result.S}` : preamble;
     }
   }
   return result;
