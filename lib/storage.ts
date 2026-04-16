@@ -605,12 +605,12 @@ export interface PressureUlcerPlan {
 
   // 現在の褥瘡
   hasCurrentUlcer: boolean;
-  currentLocations: UlcerLocation[];
+  currentLocations: (UlcerLocation | string)[];  // 「その他」選択時は「その他（詳細）」形式の文字列を含む
   currentOnsetDate?: string;
 
   // 過去の褥瘡
   hasPastUlcer: boolean;
-  pastLocations: UlcerLocation[];
+  pastLocations: (UlcerLocation | string)[];  // 「その他」選択時は「その他（詳細）」形式の文字列を含む
   pastHealedDate?: string;
 
   // DESIGN-R（看護師手入力・AI禁止）

@@ -112,9 +112,11 @@ export default function NewPressureUlcerPlanPage() {
   // 褥瘡の有無
   const [hasCurrentUlcer, setHasCurrentUlcer] = useState(false);
   const [currentLocations, setCurrentLocations] = useState<UlcerLocation[]>([]);
+  const [currentOtherDetail, setCurrentOtherDetail] = useState("");  // 「その他」選択時の詳細部位
   const [currentOnsetDate, setCurrentOnsetDate] = useState("");
   const [hasPastUlcer, setHasPastUlcer] = useState(false);
   const [pastLocations, setPastLocations] = useState<UlcerLocation[]>([]);
+  const [pastOtherDetail, setPastOtherDetail] = useState("");  // 「その他」選択時の詳細部位
   const [pastHealedDate, setPastHealedDate] = useState("");
 
   // DESIGN-R（現在の褥瘡ありの場合のみ使用）
@@ -193,13 +195,21 @@ export default function NewPressureUlcerPlanPage() {
     ([, v]) => v === "あり" || v === "できない"
   );
 
-  // バリデーション
+  // 「その他」選択時に詳細が未入力ならエラー
+  const needsCurrentOtherDetail =
+    hasCurrentUlcer && currentLocations.includes("その他") && !currentOtherDetail.trim();
+  const needsPastOtherDetail =
+    hasPastUlcer && pastLocations.includes("その他") && !pastOtherDetail.trim();
+
+  // AI生成に進める条件
   const canProceed =
     !!dailyLifeLevel &&
     !isNotApplicable &&
     ohScaleScore !== "" &&
     Number(ohScaleScore) >= 0 &&
-    Number(ohScaleScore) <= 10;
+    Number(ohScaleScore) <= 10 &&
+    !needsCurrentOtherDetail &&
+    !needsPastOtherDetail;
 
   function toggleCurrentLocation(loc: UlcerLocation) {
     setCurrentLocations((prev) =>
@@ -210,6 +220,16 @@ export default function NewPressureUlcerPlanPage() {
   function togglePastLocation(loc: UlcerLocation) {
     setPastLocations((prev) =>
       prev.includes(loc) ? prev.filter((l) => l !== loc) : [...prev, loc]
+    );
+  }
+
+  /**
+   * 「その他」選択時、詳細テキストを合成して保存用の部位配列を返す
+   * 例: ["仙骨部", "その他"] + "右肩甲骨" → ["仙骨部", "その他（右肩甲骨）"]
+   */
+  function buildEffectiveLocations(locations: UlcerLocation[], otherDetail: string): (UlcerLocation | string)[] {
+    return locations.map((l) =>
+      l === "その他" && otherDetail.trim() ? `その他（${otherDetail.trim()}）` : l
     );
   }
 
@@ -246,7 +266,7 @@ export default function NewPressureUlcerPlanPage() {
             fragile_skin: riskFactors.fragileSkin,
           },
           has_current_ulcer: hasCurrentUlcer,
-          current_locations: currentLocations,
+          current_locations: buildEffectiveLocations(currentLocations, currentOtherDetail),
           design_r: designR,
           recent_soap_records: recentRecords.map((r) => ({
             visit_date: r.visitDate,
@@ -310,10 +330,10 @@ export default function NewPressureUlcerPlanPage() {
         riskFactors,
         ohScaleScore: Number(ohScaleScore),
         hasCurrentUlcer,
-        currentLocations,
+        currentLocations: buildEffectiveLocations(currentLocations, currentOtherDetail),
         currentOnsetDate: currentOnsetDate || undefined,
         hasPastUlcer,
-        pastLocations,
+        pastLocations: buildEffectiveLocations(pastLocations, pastOtherDetail),
         pastHealedDate: pastHealedDate || undefined,
         designR,
         planBed: planBed || undefined,
@@ -716,6 +736,21 @@ export default function NewPressureUlcerPlanPage() {
                         </button>
                       ))}
                     </div>
+                    {currentLocations.includes("その他") && (
+                      <div className="mt-2 animate-fade-in">
+                        <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>
+                          その他の部位（具体的に記入）<span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={currentOtherDetail}
+                          onChange={(e) => setCurrentOtherDetail(e.target.value)}
+                          placeholder="例: 右肩甲骨部・後頭部 など"
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                          style={{ borderColor: "rgba(0,0,0,0.1)" }}
+                        />
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>発生日</label>
@@ -773,6 +808,21 @@ export default function NewPressureUlcerPlanPage() {
                         </button>
                       ))}
                     </div>
+                    {pastLocations.includes("その他") && (
+                      <div className="mt-2 animate-fade-in">
+                        <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>
+                          その他の部位（具体的に記入）<span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={pastOtherDetail}
+                          onChange={(e) => setPastOtherDetail(e.target.value)}
+                          placeholder="例: 右肩甲骨部・後頭部 など"
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                          style={{ borderColor: "rgba(0,0,0,0.1)" }}
+                        />
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs mb-1" style={{ color: "var(--text-muted)" }}>治癒日</label>
@@ -868,7 +918,12 @@ export default function NewPressureUlcerPlanPage() {
                   ⚠ {aiError}
                 </div>
               )}
-              {!canProceed && (
+              {!canProceed && (needsCurrentOtherDetail || needsPastOtherDetail) && (
+                <p className="text-xs text-center" style={{ color: "#E65100" }}>
+                  ※ 「その他」の部位を具体的に記入してください
+                </p>
+              )}
+              {!canProceed && !needsCurrentOtherDetail && !needsPastOtherDetail && (
                 <p className="text-xs text-center" style={{ color: "var(--text-muted)" }}>
                   ※ 日常生活自立度（B1以上）とOHスケール点数の入力が必要です
                 </p>
@@ -944,12 +999,12 @@ export default function NewPressureUlcerPlanPage() {
               </section>
             )}
 
-            {/* 保存ボタン */}
+            {/* 保存ボタン（AIドラフト生成後のみ有効） */}
             <section className="space-y-3">
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={!canProceed || saving}
+                disabled={!canProceed || saving || !hasAnyDraft}
                 className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? (
@@ -964,6 +1019,11 @@ export default function NewPressureUlcerPlanPage() {
                   </>
                 )}
               </button>
+              {!hasAnyDraft && (
+                <p className="text-xs text-center" style={{ color: "var(--text-muted)" }}>
+                  ※ 先にAIで看護計画ドラフトを生成してください（保存ボタンはドラフト作成後に有効になります）
+                </p>
+              )}
               {saveError && (
                 <div className="p-3 rounded-lg text-sm" style={{ background: "rgba(239, 68, 68, 0.1)", color: "#B91C1C" }}>
                   ⚠ {saveError}
