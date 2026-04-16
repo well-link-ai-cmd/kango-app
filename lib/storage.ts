@@ -626,6 +626,9 @@ export interface PressureUlcerPlan {
   // 評価記録
   evaluationNotes?: string;
 
+  // 下書きフラグ（AI生成前の途中状態）
+  isDraft?: boolean;
+
   // AI生成メタ情報
   aiModel?: string;
   aiPromptVersion?: string;
@@ -659,6 +662,7 @@ function pressureUlcerPlanFromRow(row: any): PressureUlcerPlan {
     planNutrition: row.plan_nutrition ?? undefined,
     planRehab: row.plan_rehab ?? undefined,
     evaluationNotes: row.evaluation_notes ?? undefined,
+    isDraft: row.is_draft ?? false,
     aiModel: row.ai_model ?? undefined,
     aiPromptVersion: row.ai_prompt_version ?? undefined,
     aiGeneratedAt: row.ai_generated_at ?? undefined,
@@ -724,6 +728,7 @@ export async function savePressureUlcerPlan(
     plan_nutrition: plan.planNutrition ?? null,
     plan_rehab: plan.planRehab ?? null,
     evaluation_notes: plan.evaluationNotes ?? null,
+    is_draft: plan.isDraft ?? false,
     ai_model: plan.aiModel ?? null,
     ai_prompt_version: plan.aiPromptVersion ?? null,
     ai_generated_at: plan.aiGeneratedAt ?? null,

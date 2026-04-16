@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * 褥瘡計画書 新規作成ページ（複製モード対応）
+ * 褥瘡計画書 編集ページ
  *
- * URL: /patients/[id]/pressure-ulcer-plan/new
- * クエリパラメータ:
- *   - copyFrom=<planId>: 既存計画書を複製して初期値にセット（日付・看護師名・AIドラフトは除く）
+ * URL: /patients/[id]/pressure-ulcer-plan/[planId]/edit
+ * 既存計画書を読み込み、修正後に上書き保存する。
+ * 下書き/確定の切り替えもここから可能。
  */
 
 import { useState, useEffect } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   getPatients,
@@ -20,16 +20,14 @@ import {
   type PressureUlcerPlan,
 } from "@/lib/storage";
 import { ArrowLeft } from "lucide-react";
-import PressureUlcerPlanForm from "../_components/PressureUlcerPlanForm";
+import PressureUlcerPlanForm from "../../_components/PressureUlcerPlanForm";
 
-export default function NewPressureUlcerPlanPage() {
-  const { id } = useParams<{ id: string }>();
-  const searchParams = useSearchParams();
-  const copyFromId = searchParams.get("copyFrom");
+export default function EditPressureUlcerPlanPage() {
+  const { id, planId } = useParams<{ id: string; planId: string }>();
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [recentRecords, setRecentRecords] = useState<SoapRecord[]>([]);
-  const [copyFromPlan, setCopyFromPlan] = useState<PressureUlcerPlan | null>(null);
+  const [plan, setPlan] = useState<PressureUlcerPlan | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -40,13 +38,11 @@ export default function NewPressureUlcerPlanPage() {
         const records = await getRecords(id);
         setRecentRecords(records.sort((a, b) => b.visitDate.localeCompare(a.visitDate)).slice(0, 5));
       }
-      if (copyFromId) {
-        const plan = await getPressureUlcerPlan(copyFromId);
-        setCopyFromPlan(plan);
-      }
+      const loadedPlan = await getPressureUlcerPlan(planId);
+      setPlan(loadedPlan);
       setLoaded(true);
     })();
-  }, [id, copyFromId]);
+  }, [id, planId]);
 
   if (!loaded) {
     return (
@@ -64,7 +60,13 @@ export default function NewPressureUlcerPlanPage() {
     );
   }
 
-  const isCopy = !!copyFromId && !!copyFromPlan;
+  if (!plan) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ color: "var(--text-muted)" }}>
+        計画書が見つかりません
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen relative z-[1]">
@@ -74,8 +76,8 @@ export default function NewPressureUlcerPlanPage() {
             <ArrowLeft size={22} />
           </Link>
           <div className="flex-1">
-            <h1>{isCopy ? "褥瘡計画書の複製作成" : "褥瘡計画書の作成"}</h1>
-            <p className="subtitle">{patient.name} 様</p>
+            <h1>褥瘡計画書の編集</h1>
+            <p className="subtitle">{patient.name} 様 / 作成: {plan.planDate}</p>
           </div>
         </div>
       </header>
@@ -83,9 +85,8 @@ export default function NewPressureUlcerPlanPage() {
       <PressureUlcerPlanForm
         patient={patient}
         recentRecords={recentRecords}
-        mode="new"
-        initialPlan={isCopy ? copyFromPlan : undefined}
-        isCopy={isCopy}
+        mode="edit"
+        initialPlan={plan}
       />
     </div>
   );

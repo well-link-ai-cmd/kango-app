@@ -15,10 +15,12 @@ import {
   type Patient,
   type PressureUlcerPlan,
 } from "@/lib/storage";
-import { ArrowLeft, PlusCircle, Shield, Trash2, ChevronDown, ChevronUp, Copy } from "lucide-react";
+import { ArrowLeft, PlusCircle, Shield, Trash2, ChevronDown, ChevronUp, Copy, Pencil, CopyPlus, FileEdit } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 export default function PressureUlcerPlanListPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [plans, setPlans] = useState<PressureUlcerPlan[]>([]);
@@ -41,6 +43,15 @@ export default function PressureUlcerPlanListPage() {
     await deletePressureUlcerPlan(planId);
     const ps = await getPressureUlcerPlans(id);
     setPlans(ps);
+  }
+
+  function handleEdit(planId: string) {
+    router.push(`/patients/${id}/pressure-ulcer-plan/${planId}/edit`);
+  }
+
+  function handleDuplicate(planId: string) {
+    if (!confirm("この計画書を複製しますか？\n（判定項目のみ引き継がれ、AIドラフトは再生成が必要です）")) return;
+    router.push(`/patients/${id}/pressure-ulcer-plan/new?copyFrom=${planId}`);
   }
 
   function handleCopy(key: string, text: string) {
@@ -117,15 +128,22 @@ export default function PressureUlcerPlanListPage() {
 
               return (
                 <div key={plan.id} className="card overflow-hidden">
-                  <div className="flex items-center px-5 py-4" style={{ borderBottom: isOpen ? "1px solid rgba(0,0,0,0.04)" : "none" }}>
+                  <div className="flex items-center px-5 py-4 gap-2" style={{ borderBottom: isOpen ? "1px solid rgba(0,0,0,0.04)" : "none" }}>
                     <button
-                      className="flex-1 flex items-center gap-3 text-left"
+                      className="flex-1 flex items-center gap-3 text-left min-w-0"
                       onClick={() => setExpandedId(isOpen ? null : plan.id)}
                     >
-                      <Shield size={18} style={{ color: isOpen ? "var(--accent-cyan)" : "var(--text-muted)" }} />
-                      <div className="flex-1">
-                        <div className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
-                          作成日: {plan.planDate}
+                      <Shield size={18} style={{ color: isOpen ? "var(--accent-cyan)" : "var(--text-muted)", flexShrink: 0 }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm" style={{ color: "var(--text-primary)" }}>
+                            作成日: {plan.planDate}
+                          </span>
+                          {plan.isDraft && (
+                            <span className="text-xs px-2 py-0.5 rounded" style={{ background: "rgba(245, 158, 11, 0.15)", color: "#B45309" }}>
+                              下書き
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
                           自立度: {plan.dailyLifeLevel ?? "-"} / OH: {plan.ohScaleScore ?? "-"}点
@@ -133,16 +151,35 @@ export default function PressureUlcerPlanListPage() {
                         </div>
                       </div>
                       {isOpen
-                        ? <ChevronUp size={16} style={{ color: "var(--text-muted)" }} />
-                        : <ChevronDown size={16} style={{ color: "var(--text-muted)" }} />}
+                        ? <ChevronUp size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                        : <ChevronDown size={16} style={{ color: "var(--text-muted)", flexShrink: 0 }} />}
                     </button>
-                    <button
-                      onClick={() => handleDelete(plan.id)}
-                      className="btn-delete ml-2"
-                      aria-label="計画書を削除"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => handleEdit(plan.id)}
+                        className="p-2 rounded hover:bg-gray-100"
+                        aria-label="計画書を編集"
+                        title="編集"
+                      >
+                        <Pencil size={14} style={{ color: "var(--text-muted)" }} />
+                      </button>
+                      <button
+                        onClick={() => handleDuplicate(plan.id)}
+                        className="p-2 rounded hover:bg-gray-100"
+                        aria-label="計画書を複製"
+                        title="複製"
+                      >
+                        <CopyPlus size={14} style={{ color: "var(--text-muted)" }} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(plan.id)}
+                        className="btn-delete"
+                        aria-label="計画書を削除"
+                        title="削除"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
 
                   {isOpen && (
