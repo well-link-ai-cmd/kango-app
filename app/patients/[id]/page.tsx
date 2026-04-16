@@ -201,6 +201,15 @@ export default function PatientDetailPage() {
                               <Copy size={14} />
                               {copied === r.id ? "コピー済！" : "コピー"}
                             </button>
+                            <Link
+                              href={`/patients/${id}/records/${r.id}/edit`}
+                              className="btn-copy"
+                              aria-label="記録を編集"
+                              title="記録を編集"
+                            >
+                              <Pencil size={14} />
+                              編集
+                            </Link>
                             <button
                               onClick={() => handleDelete(r.id)}
                               className="btn-delete"

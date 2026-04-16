@@ -82,10 +82,24 @@ export function textToSoap(text: string): { S: string; O: string; A: string; P: 
   const lines = text.split("\n");
   let current: "S" | "O" | "A" | "P" | null = null;
   for (const line of lines) {
-    const match = line.match(/^([SOAP])[:：]\s*/);
+    // 行頭に話者プレフィックス（例：「姉S:」「夫S:」「ご家族S:」）が付いていても
+    // SOAP行として拾えるようにする。プレフィックスがある場合は発話者情報を
+    // 失わないよう本文に残して保存する。
+    const match = line.match(/^(.{0,5}?)([SOAP])[:：]\s*/);
     if (match) {
-      current = match[1] as "S" | "O" | "A" | "P";
-      result[current] = line.slice(match[0].length);
+      const prefix = match[1];
+      const letter = match[2] as "S" | "O" | "A" | "P";
+      const rest = line.slice(match[0].length);
+      if (prefix && current) {
+        // 現在のセクション内の話者マーカー付き発言として追記する
+        // （セクション切り替えにはしない）。
+        const appendText = `${prefix}${letter}: ${rest}`;
+        result[current] += (result[current] ? "\n" : "") + appendText;
+      } else {
+        // プレフィックスなし、またはセクション先頭。通常通りセクション切替。
+        current = letter;
+        result[current] = prefix ? `${prefix}${letter}: ${rest}` : rest;
+      }
     } else if (current) {
       result[current] += (result[current] ? "\n" : "") + line;
     }
@@ -272,13 +286,30 @@ export async function getRecords(patientId?: string): Promise<SoapRecord[]> {
   return (data ?? []).map(rowToRecord);
 }
 
+export async function getRecordById(id: string): Promise<SoapRecord | null> {
+  const { data, error } = await getSupabase()
+    .from("soap_records")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) {
+    if (error.code === "PGRST116") return null;
+    console.error("getRecordById error:", error);
+    return null;
+  }
+  return rowToRecord(data);
+}
+
 export async function saveRecord(record: SoapRecord): Promise<void> {
   const userId = await getCurrentUserId();
   const row = recordToRow(record, userId ?? undefined);
   const { error } = await getSupabase()
     .from("soap_records")
     .upsert(row, { onConflict: "id" });
-  if (error) console.error("saveRecord error:", error);
+  if (error) {
+    console.error("saveRecord error:", error);
+    throw new Error(error.message);
+  }
 }
 
 export async function deleteRecord(id: string): Promise<void> {
