@@ -77,44 +77,78 @@ export function soapToText(s: string, o: string, a: string, p: string): string {
   return `S: ${s}\nO: ${o}\nA: ${a}\nP: ${p}`;
 }
 
+type SoapLetter = "S" | "O" | "A" | "P";
+
 export function textToSoap(text: string): { S: string; O: string; A: string; P: string } {
   const result = { S: "", O: "", A: "", P: "" };
   const lines = text.split("\n");
-  let current: "S" | "O" | "A" | "P" | null = null;
+  // current は現在のセクション群（合成マーカー `A/P:` では複数セクションを同時に保持）
+  let current: SoapLetter[] | null = null;
   let markerFound = false;
-  const preambleLines: string[] = []; // S:/O:/A:/P: マーカー検出前の行を退避
+  const preambleLines: string[] = []; // どのマーカーも検出される前の行を退避
+
   for (const line of lines) {
-    // 行頭に話者プレフィックス（例：「姉S:」「夫S:」「ご家族S:」）が付いていても
-    // SOAP行として拾えるようにする。プレフィックスがある場合は発話者情報を
-    // 失わないよう本文に残して保存する。
+    // 1) 合成マーカー（`A/P:` `S/O:` `S/O/A/P:` など）を最優先で認識。
+    //    区切りは半角/ 全角／ 中点・ を許容。内容は指定された全セクションに投入する。
+    const compoundMatch = line.match(/^([SOAP](?:[/／・][SOAP])+)[:：]\s*(.*)$/);
+    if (compoundMatch) {
+      markerFound = true;
+      const letters = compoundMatch[1].split(/[/／・]/) as SoapLetter[];
+      const rest = compoundMatch[2];
+      current = letters;
+      if (rest) {
+        for (const letter of letters) {
+          result[letter] = result[letter] ? `${result[letter]}\n${rest}` : rest;
+        }
+      }
+      // rest が空（`A/P:` だけで中身なし）なら既存値は保護（非破壊）
+      continue;
+    }
+
+    // 2) 単体マーカー（`S:` / 話者プレフィックス付き `夫S:` 等）
     const match = line.match(/^(.{0,5}?)([SOAP])[:：]\s*/);
     if (match) {
       markerFound = true;
       const prefix = match[1];
-      const letter = match[2] as "S" | "O" | "A" | "P";
+      const letter = match[2] as SoapLetter;
       const rest = line.slice(match[0].length);
+
       if (prefix && current) {
-        // 現在のセクション内の話者マーカー付き発言として追記する
-        // （セクション切り替えにはしない）。
-        const appendText = `${prefix}${letter}: ${rest}`;
-        result[current] += (result[current] ? "\n" : "") + appendText;
+        // 話者プレフィックス扱い（セクション切替はせず、現セクション群の先頭に追記）
+        // rest が空なら話者マーカー単独で意味がないので何もしない
+        if (rest) {
+          const appendText = `${prefix}${letter}: ${rest}`;
+          const target = current[0];
+          result[target] += (result[target] ? "\n" : "") + appendText;
+        }
       } else {
-        // プレフィックスなし、またはセクション先頭。通常通りセクション切替。
-        current = letter;
-        result[current] = prefix ? `${prefix}${letter}: ${rest}` : rest;
+        // セクション先頭として切替。
+        // 空マーカー（`A:` のみで内容なし）が既存セクションを上書きしないよう保護
+        current = [letter];
+        if (rest) {
+          const newContent = prefix ? `${prefix}${letter}: ${rest}` : rest;
+          result[letter] = result[letter] ? `${result[letter]}\n${newContent}` : newContent;
+        }
       }
-    } else if (current) {
-      result[current] += (result[current] ? "\n" : "") + line;
+      continue;
+    }
+
+    // 3) マーカー無し行は現セクション群全てに連結（合成マーカー中なら複数セクションに）
+    if (current) {
+      for (const target of current) {
+        result[target] += (result[target] ? "\n" : "") + line;
+      }
     } else {
-      // まだ S:/O:/A:/P: マーカーが現れていない前置き行。捨てずに退避する
       preambleLines.push(line);
     }
   }
+
   // マーカーが1つも検出されなかった場合、入力テキストを丸ごと S に入れて
   // ユーザーの貼り付け内容が消失しないようにする（フリー形式対応）
   if (!markerFound) {
     return { S: text.trim(), O: "", A: "", P: "" };
   }
+
   // 前置き行があれば S の先頭に差し込む（訪問日メモ等を失わないため）
   if (preambleLines.length > 0) {
     const preamble = preambleLines.join("\n").trim();
@@ -122,6 +156,7 @@ export function textToSoap(text: string): { S: string; O: string; A: string; P: 
       result.S = result.S ? `${preamble}\n${result.S}` : preamble;
     }
   }
+
   return result;
 }
 
