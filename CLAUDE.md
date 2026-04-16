@@ -29,7 +29,7 @@
   - `docs/報告書3様式_手順書.md`
 - [ ] 褥瘡計画書：プロンプト設計→UI→DB migration→実装
 - [ ] 報告書3様式：プロンプト設計→UI→DB migration→実装
-- [ ] 月次一括コピー機能（軽い・半日で可）
+- [x] ~~月次一括コピー機能~~（実装済：`app/patients/[id]/page.tsx` の`handleCopyMonth`、月別フォルダUI完備）
 - [ ] 計画評価機能（半年ごと、記録からの修正提案）
 - [ ] SOAP生成の実運用テスト
 - [ ] PT用SOAPプロンプト追加

@@ -7,7 +7,7 @@ import {
   getPatients, getRecordsByYearMonth, getRecordMonths, getRecords,
   deleteRecord, type Patient, type SoapRecord,
 } from "@/lib/storage";
-import { ArrowLeft, PlusCircle, Copy, Trash2, ChevronDown, ChevronUp, Pencil, FolderOpen, Folder, ClipboardList } from "lucide-react";
+import { ArrowLeft, PlusCircle, Copy, Trash2, ChevronDown, ChevronUp, Pencil, FolderOpen, Folder, ClipboardList, Shield } from "lucide-react";
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -116,6 +116,15 @@ export default function PatientDetailPage() {
         >
           <ClipboardList size={18} />
           看護内容リストを確認する
+        </Link>
+
+        {/* 褥瘡計画書 */}
+        <Link
+          href={`/patients/${id}/pressure-ulcer-plan`}
+          className="btn-outline w-full justify-center mb-3 animate-fade-in-up"
+        >
+          <Shield size={18} />
+          褥瘡計画書
         </Link>
 
         {/* New Record Button */}

@@ -14,34 +14,47 @@ interface AiResponse {
   text: string;
 }
 
+interface GenerateOptions {
+  /** 出力トークン上限。褥瘡計画書など長文出力時は8192等に増やす。未指定時は4096 */
+  maxTokens?: number;
+  /** タイムアウトms。未指定時は30秒 */
+  timeoutMs?: number;
+}
+
 /**
  * AI応答を生成する
  * @param prompt ユーザープロンプト（入力データ中心）
  * @param systemPrompt システムプロンプト（ロール定義・ルール・出力形式）
+ * @param options 生成オプション（max_tokens等）
  */
-export async function generateAiResponse(prompt: string, systemPrompt?: string): Promise<AiResponse> {
+export async function generateAiResponse(
+  prompt: string,
+  systemPrompt?: string,
+  options?: GenerateOptions
+): Promise<AiResponse> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
 
   if (anthropicKey) {
-    return generateWithClaude(anthropicKey, prompt, systemPrompt);
+    return generateWithClaude(anthropicKey, prompt, systemPrompt, options);
   }
 
   if (geminiKey) {
-    return generateWithGemini(geminiKey, prompt, systemPrompt);
+    return generateWithGemini(geminiKey, prompt, systemPrompt, options);
   }
 
   throw new Error("APIキーが設定されていません。.env.local に ANTHROPIC_API_KEY または GEMINI_API_KEY を設定してください。");
 }
 
-async function generateWithGemini(apiKey: string, prompt: string, systemPrompt?: string): Promise<AiResponse> {
+async function generateWithGemini(apiKey: string, prompt: string, systemPrompt?: string, options?: GenerateOptions): Promise<AiResponse> {
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
     model: "gemini-1.5-flash",
     ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
+    ...(options?.maxTokens ? { generationConfig: { maxOutputTokens: options.maxTokens } } : {}),
   });
 
-  const timeoutMs = 30000;
+  const timeoutMs = options?.timeoutMs ?? 30000;
   try {
     const result = await Promise.race([
       model.generateContent(prompt),
@@ -63,21 +76,22 @@ async function generateWithGemini(apiKey: string, prompt: string, systemPrompt?:
   }
 }
 
-async function generateWithClaude(apiKey: string, prompt: string, systemPrompt?: string): Promise<AiResponse> {
+async function generateWithClaude(apiKey: string, prompt: string, systemPrompt?: string, options?: GenerateOptions): Promise<AiResponse> {
   // Dynamic import to avoid build errors when only using Gemini
   const Anthropic = (await import("@anthropic-ai/sdk")).default;
   const client = new Anthropic({ apiKey });
 
-  const timeoutMs = 30000;
+  const timeoutMs = options?.timeoutMs ?? 30000;
+  const maxTokens = options?.maxTokens ?? 4096;
   const message = await Promise.race([
     client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       ...(systemPrompt ? { system: systemPrompt } : {}),
       messages: [{ role: "user", content: prompt }],
     }),
     new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("AI応答がタイムアウトしました（30秒）。再度お試しください。")), timeoutMs)
+      setTimeout(() => reject(new Error(`AI応答がタイムアウトしました（${Math.round(timeoutMs / 1000)}秒）。再度お試しください。`)), timeoutMs)
     ),
   ]);
 
