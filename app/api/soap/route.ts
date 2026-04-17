@@ -51,9 +51,10 @@ export async function POST(req: NextRequest) {
   // Haikuが確実に守れるよう、最重要ルールを短く明確に記述
   const systemPrompt = `あなたは訪問看護記録のSOAP作成AIである。看護師の話し言葉メモをSOAP形式に変換する。
 
-# 出力形式
-JSONのみ出力。説明文や前置きは一切不要。
-{"S":"...","O":"...","A":"...","P":"..."}
+# 作業手順（必ず順番に実行）
+1. extracted_facts：メモから事実を1つ残らず抽出する（発言・観察・処置・時刻マーカー・次回予定など）
+2. coverage_check：抽出した各事実を S/O/A/P のどこに反映するかを1行ずつ確認する。漏れがあればSOAP記述時に必ず含める
+3. S・O・A・P：coverage_checkに従って記述する。extracted_factsにある事実は全て反映する
 
 # 文体ルール（必ず守ること）
 - 過去記録が提供されている場合、その文末表現・文の長さ・用語の書き方に合わせる
@@ -109,19 +110,30 @@ ${rawInput}`
     : `${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
 ${rawInput}`;
 
-  // Tool use でJSON形式を強制（SOAPの4項目を必ず揃える）
+  // Tool use でJSON形式を強制。
+  // extracted_facts と coverage_check を先に埋めさせることで、
+  // Haikuに「抽出→反映チェック→SOAP記述」の順序を強制する（抜け漏れ対策）
   const soapTool = {
     name: "output_soap",
-    description: "訪問看護記録のSOAP形式で出力する。S/O/A/Pの各項目を自然な文章で記載する。",
+    description: "訪問看護記録をSOAP形式で出力する。必ず extracted_facts → coverage_check → S/O/A/P の順で全項目を埋めること。",
     input_schema: {
       type: "object" as const,
       properties: {
-        S: { type: "string", description: "利用者本人の言葉（主観情報）。方言・口語をそのまま残す" },
-        O: { type: "string", description: "客観情報。場面描写→バイタル→観察→処置→次回予定の時系列順" },
-        A: { type: "string", description: "アセスメント。所見から直接書き始め、前回からの変化と臨床判断で締める" },
+        extracted_facts: {
+          type: "array",
+          items: { type: "string" },
+          description: "今回の訪問メモから抽出した全事実を箇条書きで列挙。発言（「〜」）・観察所見・バイタル・処置・時刻マーカー・次回予定など、メモに書かれた内容は1つ残らず書き出す。これは内部確認用で、ユーザーには表示されない。",
+        },
+        coverage_check: {
+          type: "string",
+          description: "extracted_facts の各項目を S/O/A/P のどこに反映したかを1行ずつ列挙。例：『発言「膝が痛い」→S』『右下腿浮腫2+→O』『前回からのROM改善→A』『継続観察→P』。ここで漏れに気付いたら後続のSOAPに必ず含めること。内部確認用。",
+        },
+        S: { type: "string", description: "利用者本人の言葉（主観情報）。方言・口語をそのまま残す。家族発言は「妻S：」と分ける" },
+        O: { type: "string", description: "客観情報。訪問時→バイタル→観察→処置→退室時/次回予定の時系列順。見出しは書かず自然な文章で" },
+        A: { type: "string", description: "アセスメント。所見から直接書き始め、前回からの変化を含め、臨床判断で締める。前置き不要" },
         P: { type: "string", description: "今後のケア方針。3〜5文。「〜していく」「〜を継続する」で統一" },
       },
-      required: ["S", "O", "A", "P"],
+      required: ["extracted_facts", "coverage_check", "S", "O", "A", "P"],
     },
   };
 
@@ -129,20 +141,17 @@ ${rawInput}`;
     const response = await generateAiResponse(prompt, systemPrompt, {
       temperature: 0.2,
       tool: soapTool,
+      // extracted_facts / coverage_check の分だけ余裕を持たせる
+      maxTokens: 6144,
     });
 
-    // Claudeはtool_useで返るのでtoolInputを優先。Gemini等はJSON抽出にフォールバック
-    let soap: { S: string; O: string; A: string; P: string };
-    if (response.toolInput) {
-      soap = response.toolInput as { S: string; O: string; A: string; P: string };
-    } else {
-      const jsonMatch = response.text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return NextResponse.json({ error: "AIの応答を解析できませんでした。もう一度お試しください。" }, { status: 500 });
-      }
-      soap = JSON.parse(jsonMatch[0]);
+    if (!response.toolInput) {
+      return NextResponse.json({ error: "AIの応答を解析できませんでした。もう一度お試しください。" }, { status: 500 });
     }
-    return NextResponse.json(soap);
+
+    // 内部確認用フィールドは返さず、S/O/A/P のみ返す
+    const { S, O, A, P } = response.toolInput as { S: string; O: string; A: string; P: string };
+    return NextResponse.json({ S, O, A, P });
   } catch (e) {
     console.error(e);
     const errorMessage = e instanceof Error ? e.message : "AI変換中にエラーが発生しました。";
