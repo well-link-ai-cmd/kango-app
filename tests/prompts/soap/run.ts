@@ -70,7 +70,7 @@ function buildSoapRequest(input: CaseInput) {
   const allPrevRecords = [...(previousRecords ?? []), ...(initialSoapRecords ?? [])].slice(0, 3);
 
   const alertAnswersSection = alertAnswers && alertAnswers.length > 0
-    ? "\n【前回からの継続確認事項への回答】\n" +
+    ? "\n【前回からの継続確認事項への回答（今回の事実として必ずSOAPに反映）】\n" +
       alertAnswers
         .filter((qa) => qa.answer.trim())
         .map((qa) => `継続確認: ${qa.question}\n回答: ${qa.answer}`)
@@ -78,7 +78,7 @@ function buildSoapRequest(input: CaseInput) {
     : "";
 
   const answersSection = questionAnswers && questionAnswers.length > 0
-    ? "\n【AIからの確認質問への回答】\n" +
+    ? "\n【AIからの確認質問への回答（今回の事実として必ずSOAPに反映）】\n" +
       questionAnswers
         .filter((qa) => qa.answer.trim())
         .map((qa) => `Q: ${qa.question}\nA: ${qa.answer}`)
@@ -89,9 +89,19 @@ function buildSoapRequest(input: CaseInput) {
 
   const systemPrompt = `あなたは訪問看護記録のSOAP作成AIである。看護師の話し言葉メモをSOAP形式に変換する。
 
+# 事実ソース（すべて同等に扱う）
+以下を「今回訪問の事実」として全て扱い、抽出・反映の対象とする：
+- 【今回の訪問メモ】
+- 【S情報】（提供されている場合）
+- 【AIからの確認質問への回答】（提供されている場合）
+- 【前回からの継続確認事項への回答】（提供されている場合）
+
+特に重要：AI確認質問・継続確認への回答は「メモに記載漏れがあった事実を看護師が後から補足したもの」である。
+空欄でなければ必ず S/O/A/P の適切な箇所に反映すること。回答を無視してはならない。
+
 # 作業手順（必ず順番に実行）
-1. extracted_facts：メモから事実を1つ残らず抽出する（発言・観察・処置・時刻マーカー・次回予定など）
-2. coverage_check：抽出した各事実を S/O/A/P のどこに反映するかを1行ずつ確認する。漏れがあればSOAP記述時に必ず含める
+1. extracted_facts：上記の全事実ソースから事実を1つ残らず抽出する（発言・観察・処置・時刻マーカー・次回予定など）。各事実の末尾に由来タグを付ける：[メモ] / [S情報] / [AI回答] / [継続確認回答]
+2. coverage_check：抽出した各事実を S/O/A/P のどこに反映するかを1行ずつ確認する。[AI回答] [継続確認回答] タグの項目が SOAP 本文に含まれているかを特に厳しくチェックする
 3. S・O・A・P：coverage_checkに従って記述する。extracted_factsにある事実は全て反映する
 
 # 文体ルール（必ず守ること）
@@ -100,7 +110,7 @@ function buildSoapRequest(input: CaseInput) {
   - 過去記録が短文なら短文、長文なら長文にする
 - 過去記録がない場合は「〜みられる」「〜である」調の標準的な看護記録文体で書く
 - 見出し（【】）・箇条書き（・や-）・番号リストは使わない。自然な文章で書く
-- メモにない事実を創作しない。メモの内容だけで書く
+- 事実ソース（メモ・S情報・各種回答）にない事実を創作しない
 
 # 医療用語の補正（必ず実行）
 音声入力では同音異義語の誤変換が頻発する。文脈から正しい医療用語に直すこと。
@@ -153,11 +163,11 @@ ${rawInput}`;
         extracted_facts: {
           type: "array",
           items: { type: "string" },
-          description: "今回の訪問メモから抽出した全事実を箇条書きで列挙。内部確認用。",
+          description: "事実ソース（今回の訪問メモ・S情報・AI確認質問への回答・継続確認への回答）から抽出した全事実を箇条書きで列挙。各項目の末尾に由来タグ [メモ] / [S情報] / [AI回答] / [継続確認回答] を付ける。内部確認用。",
         },
         coverage_check: {
           type: "string",
-          description: "extracted_facts の各項目を S/O/A/P のどこに反映したかを1行ずつ列挙。内部確認用。",
+          description: "extracted_facts の各項目を S/O/A/P のどこに反映したかを1行ずつ列挙。[AI回答] [継続確認回答] タグの項目が必ず SOAP 本文に含まれているかを厳しくチェックする。内部確認用。",
         },
         S: { type: "string" },
         O: { type: "string" },
