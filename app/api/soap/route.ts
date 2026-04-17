@@ -109,16 +109,39 @@ ${rawInput}`
     : `${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
 ${rawInput}`;
 
+  // Tool use でJSON形式を強制（SOAPの4項目を必ず揃える）
+  const soapTool = {
+    name: "output_soap",
+    description: "訪問看護記録のSOAP形式で出力する。S/O/A/Pの各項目を自然な文章で記載する。",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        S: { type: "string", description: "利用者本人の言葉（主観情報）。方言・口語をそのまま残す" },
+        O: { type: "string", description: "客観情報。場面描写→バイタル→観察→処置→次回予定の時系列順" },
+        A: { type: "string", description: "アセスメント。所見から直接書き始め、前回からの変化と臨床判断で締める" },
+        P: { type: "string", description: "今後のケア方針。3〜5文。「〜していく」「〜を継続する」で統一" },
+      },
+      required: ["S", "O", "A", "P"],
+    },
+  };
+
   try {
-    const response = await generateAiResponse(prompt, systemPrompt);
+    const response = await generateAiResponse(prompt, systemPrompt, {
+      temperature: 0.2,
+      tool: soapTool,
+    });
 
-    // JSONを抽出
-    const jsonMatch = response.text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return NextResponse.json({ error: "AIの応答を解析できませんでした。もう一度お試しください。" }, { status: 500 });
+    // Claudeはtool_useで返るのでtoolInputを優先。Gemini等はJSON抽出にフォールバック
+    let soap: { S: string; O: string; A: string; P: string };
+    if (response.toolInput) {
+      soap = response.toolInput as { S: string; O: string; A: string; P: string };
+    } else {
+      const jsonMatch = response.text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        return NextResponse.json({ error: "AIの応答を解析できませんでした。もう一度お試しください。" }, { status: 500 });
+      }
+      soap = JSON.parse(jsonMatch[0]);
     }
-
-    const soap = JSON.parse(jsonMatch[0]);
     return NextResponse.json(soap);
   } catch (e) {
     console.error(e);

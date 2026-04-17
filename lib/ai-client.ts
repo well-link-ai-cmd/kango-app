@@ -12,6 +12,18 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 interface AiResponse {
   text: string;
+  /** tool_useで返された入力JSON。tool指定時のみセットされる */
+  toolInput?: Record<string, unknown>;
+}
+
+interface AiTool {
+  name: string;
+  description: string;
+  input_schema: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
 }
 
 interface GenerateOptions {
@@ -19,6 +31,10 @@ interface GenerateOptions {
   maxTokens?: number;
   /** タイムアウトms。未指定時は30秒 */
   timeoutMs?: number;
+  /** サンプリング温度。医療記録など決定的な出力には 0〜0.3 を推奨。未指定時はSDK既定値 */
+  temperature?: number;
+  /** tool_useで構造化JSONを強制。指定するとClaudeは必ずこのスキーマに従ったJSONを返す */
+  tool?: AiTool;
 }
 
 /**
@@ -83,11 +99,17 @@ async function generateWithClaude(apiKey: string, prompt: string, systemPrompt?:
 
   const timeoutMs = options?.timeoutMs ?? 30000;
   const maxTokens = options?.maxTokens ?? 4096;
+
   const message = await Promise.race([
     client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: maxTokens,
+      ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
       ...(systemPrompt ? { system: systemPrompt } : {}),
+      ...(options?.tool ? {
+        tools: [options.tool],
+        tool_choice: { type: "tool" as const, name: options.tool.name },
+      } : {}),
       messages: [{ role: "user", content: prompt }],
     }),
     new Promise<never>((_, reject) =>
@@ -95,8 +117,23 @@ async function generateWithClaude(apiKey: string, prompt: string, systemPrompt?:
     ),
   ]);
 
-  const text = message.content[0].type === "text" ? message.content[0].text : "";
-  return { text };
+  // tool_use ブロックがあれば構造化出力を優先返却
+  for (const block of message.content) {
+    if (block.type === "tool_use") {
+      return {
+        text: JSON.stringify(block.input),
+        toolInput: block.input as Record<string, unknown>,
+      };
+    }
+  }
+
+  // フォールバック: textブロックを返す
+  for (const block of message.content) {
+    if (block.type === "text") {
+      return { text: block.text };
+    }
+  }
+  return { text: "" };
 }
 
 export function getAiProvider(): "gemini" | "claude" | "none" {
