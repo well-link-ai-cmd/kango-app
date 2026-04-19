@@ -38,6 +38,12 @@
   ai-guardrails / medical-reviewer / prompt-tester
 - **Vercel preview環境の環境変数** Preview スコープ対応済み
 
+### 完了（2026-04-17追加）
+- **SOAP/questions プロンプト精度改善（ブランチ: `claude/improve-haiku-prompts-0uzLj`、未マージ）**
+  - Tool use でJSON強制＋temperature 0.2（commit `20a637d`）
+  - Gemini経路削除、SOAPに自己チェック機構（extracted_facts / coverage_check）、questions を memo_covers → expected → gaps の4段構造に再構成（commit `e3240c2`）
+  - テストハーネス `tests/prompts/soap/` 追加（cases.json 5件・run.ts ランナー・README）（commit `6f7c398`）
+
 ### 未完了
 - [ ] **褥瘡計画書の実運用テスト**（自ステーションで実データ運用→AI出力の品質フィードバック）
 - [ ] 責任者に手順書レビュー依頼（褥瘡計画書・報告書3様式）
@@ -53,7 +59,23 @@
 
 ### 次回やること（2026-04-17以降）— **他端末から再開するとき用**
 
-**最優先：看護計画の作成・修正機能（新規）**
+**最優先：SOAPプロンプト精度検証（自宅PCから再開）**
+  ブランチ `claude/improve-haiku-prompts-0uzLj` で改善実装済。ローカルで挙動確認する：
+  1. `git checkout claude/improve-haiku-prompts-0uzLj && git pull`
+  2. `.env.local` に `ANTHROPIC_API_KEY` があることを確認
+  3. まずは注目のまとまりのないメモを試す：
+     ```
+     npx tsx tests/prompts/soap/run.ts soap case-02-rambling
+     ```
+  4. 全ケースなら `npx tsx tests/prompts/soap/run.ts all all`（5ケース×2モード、合計$0.05未満）
+  5. 出力を見て判定：
+     - 十分 → master マージして本番投入
+     - 不十分 → プロンプト v2（Few-shot追加 or Sonnetへ昇格）を検討
+  6. 特に `case-04-already-covered` の questions 結果で「既出質問が出なくなっているか」を重点確認
+     （今日の課題だった「やったことを教えてください問題」が解消されたかの確認）
+  7. 携帯からも試したいなら GitHub Actions workflow 化を検討（未着手）
+
+**その次：看護計画の作成・修正機能（新規）**
   褥瘡計画書（実装済）とは別に、一般的な看護計画書（ADL・問題リスト・目標・介入）の作成機能を追加する
   - カイポケの「看護計画書」フォーマットの確認が必要（責任者からスクショ受領必要）
   - 既存の共通コンポーネント `_components/PressureUlcerPlanForm.tsx` のパターンを踏襲

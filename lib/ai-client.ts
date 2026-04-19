@@ -1,17 +1,24 @@
 /**
- * AI Client - Gemini (テスト用) / Claude (本番用) 切り替え
+ * AI Client - Claude Haiku 4.5 (訪問看護記録向け)
  *
- * .env.local に以下のどちらかを設定:
- *   GEMINI_API_KEY=xxx    → Gemini (Google AI Studio 無料テスト用)
- *   ANTHROPIC_API_KEY=xxx → Claude (本番用)
- *
- * 両方設定されている場合は GEMINI_API_KEY を優先（テストモード）
+ * .env.local に以下を設定:
+ *   ANTHROPIC_API_KEY=xxx
  */
-
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 interface AiResponse {
   text: string;
+  /** tool_useで返された入力JSON。tool指定時のみセットされる */
+  toolInput?: Record<string, unknown>;
+}
+
+interface AiTool {
+  name: string;
+  description: string;
+  input_schema: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
 }
 
 interface GenerateOptions {
@@ -19,6 +26,10 @@ interface GenerateOptions {
   maxTokens?: number;
   /** タイムアウトms。未指定時は30秒 */
   timeoutMs?: number;
+  /** サンプリング温度。医療記録など決定的な出力には 0〜0.3 を推奨。未指定時はSDK既定値 */
+  temperature?: number;
+  /** tool_useで構造化JSONを強制。指定するとClaudeは必ずこのスキーマに従ったJSONを返す */
+  tool?: AiTool;
 }
 
 /**
@@ -32,62 +43,27 @@ export async function generateAiResponse(
   systemPrompt?: string,
   options?: GenerateOptions
 ): Promise<AiResponse> {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const geminiKey = process.env.GEMINI_API_KEY;
-
-  if (anthropicKey) {
-    return generateWithClaude(anthropicKey, prompt, systemPrompt, options);
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("ANTHROPIC_API_KEY が設定されていません。.env.local を確認してください。");
   }
 
-  if (geminiKey) {
-    return generateWithGemini(geminiKey, prompt, systemPrompt, options);
-  }
-
-  throw new Error("APIキーが設定されていません。.env.local に ANTHROPIC_API_KEY または GEMINI_API_KEY を設定してください。");
-}
-
-async function generateWithGemini(apiKey: string, prompt: string, systemPrompt?: string, options?: GenerateOptions): Promise<AiResponse> {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
-    ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
-    ...(options?.maxTokens ? { generationConfig: { maxOutputTokens: options.maxTokens } } : {}),
-  });
-
-  const timeoutMs = options?.timeoutMs ?? 30000;
-  try {
-    const result = await Promise.race([
-      model.generateContent(prompt),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("AI応答がタイムアウトしました（30秒）。再度お試しください。")), timeoutMs)
-      ),
-    ]);
-    const text = result.response.text();
-    return { text };
-  } catch (e: unknown) {
-    const err = e as Error;
-    if (err.message?.includes("API_KEY") || err.message?.includes("permission")) {
-      throw new Error("Gemini APIキーが無効です。Google AI Studio でAPIキーを確認してください。");
-    }
-    if (err.message?.includes("not found") || err.message?.includes("model")) {
-      throw new Error("Geminiモデルが利用できません。APIキーの無料枠を確認してください。");
-    }
-    throw e;
-  }
-}
-
-async function generateWithClaude(apiKey: string, prompt: string, systemPrompt?: string, options?: GenerateOptions): Promise<AiResponse> {
-  // Dynamic import to avoid build errors when only using Gemini
   const Anthropic = (await import("@anthropic-ai/sdk")).default;
   const client = new Anthropic({ apiKey });
 
   const timeoutMs = options?.timeoutMs ?? 30000;
   const maxTokens = options?.maxTokens ?? 4096;
+
   const message = await Promise.race([
     client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: maxTokens,
+      ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
       ...(systemPrompt ? { system: systemPrompt } : {}),
+      ...(options?.tool ? {
+        tools: [options.tool],
+        tool_choice: { type: "tool" as const, name: options.tool.name },
+      } : {}),
       messages: [{ role: "user", content: prompt }],
     }),
     new Promise<never>((_, reject) =>
@@ -95,12 +71,21 @@ async function generateWithClaude(apiKey: string, prompt: string, systemPrompt?:
     ),
   ]);
 
-  const text = message.content[0].type === "text" ? message.content[0].text : "";
-  return { text };
-}
+  // tool_use ブロックがあれば構造化出力を優先返却
+  for (const block of message.content) {
+    if (block.type === "tool_use") {
+      return {
+        text: JSON.stringify(block.input),
+        toolInput: block.input as Record<string, unknown>,
+      };
+    }
+  }
 
-export function getAiProvider(): "gemini" | "claude" | "none" {
-  if (process.env.ANTHROPIC_API_KEY) return "claude";
-  if (process.env.GEMINI_API_KEY) return "gemini";
-  return "none";
+  // フォールバック: textブロックを返す
+  for (const block of message.content) {
+    if (block.type === "text") {
+      return { text: block.text };
+    }
+  }
+  return { text: "" };
 }
