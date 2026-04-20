@@ -39,10 +39,20 @@
 - **Vercel preview環境の環境変数** Preview スコープ対応済み
 
 ### 完了（2026-04-17追加）
-- **SOAP/questions プロンプト精度改善（ブランチ: `claude/improve-haiku-prompts-0uzLj`、未マージ）**
-  - Tool use でJSON強制＋temperature 0.2（commit `20a637d`）
-  - Gemini経路削除、SOAPに自己チェック機構（extracted_facts / coverage_check）、questions を memo_covers → expected → gaps の4段構造に再構成（commit `e3240c2`）
-  - テストハーネス `tests/prompts/soap/` 追加（cases.json 5件・run.ts ランナー・README）（commit `6f7c398`）
+- **SOAP/questions プロンプト精度改善（master マージ済）**
+  - Tool use でJSON強制＋temperature 0.2
+  - Gemini経路削除、SOAPに自己チェック機構（extracted_facts / coverage_check）、questions を memo_covers → expected → gaps の4段構造に再構成
+  - テストハーネス `tests/prompts/soap/` 追加（cases.json 7件・run.ts ランナー・README）
+
+### 完了（2026-04-20追加）
+- **SOAP Few-shot例3件組み込み（master マージ済）**
+  - 責任者提供の実記録（ターミナル・認知症・終末期）をSonnet 4.6で話し言葉逆生成→看護師レビュー→ `lib/soap-fewshot.ts` に静的埋込み
+  - S情報ポリシー明確化：sInput がある時のみ S 欄に passthrough（誤変換補正のみ）。sInput なしなら S=""。口頭メモ・過去記録からの S 抽出を禁止
+  - ただし S情報は A/P の臨床判断材料としては必ず考慮（例：「痛みが増した」なら A で疼痛増悪評価、P でレスキュー検討）
+  - 誤変換補正を全段階（extracted_facts含む）で適用するよう強化
+  - 家族発言・本人発言を O に「〜より〜との報告/訴えあり」形式で客観記載
+  - tool_use と Few-shot XML タグの競合により出力崩壊が発生した → XML→平文ラベル形式に修正
+  - case-07 追加（S情報→A/P反映検証）。全7ケース合格
 
 ### 未完了
 - [ ] **褥瘡計画書の実運用テスト**（自ステーションで実データ運用→AI出力の品質フィードバック）
@@ -59,21 +69,23 @@
 
 ### 次回やること（2026-04-17以降）— **他端末から再開するとき用**
 
-**最優先：SOAPプロンプト精度検証（自宅PCから再開）**
-  ブランチ `claude/improve-haiku-prompts-0uzLj` で改善実装済。ローカルで挙動確認する：
-  1. `git checkout claude/improve-haiku-prompts-0uzLj && git pull`
-  2. `.env.local` に `ANTHROPIC_API_KEY` があることを確認
-  3. まずは注目のまとまりのないメモを試す：
-     ```
-     npx tsx tests/prompts/soap/run.ts soap case-02-rambling
-     ```
-  4. 全ケースなら `npx tsx tests/prompts/soap/run.ts all all`（5ケース×2モード、合計$0.05未満）
-  5. 出力を見て判定：
-     - 十分 → master マージして本番投入
-     - 不十分 → プロンプト v2（Few-shot追加 or Sonnetへ昇格）を検討
-  6. 特に `case-04-already-covered` の questions 結果で「既出質問が出なくなっているか」を重点確認
-     （今日の課題だった「やったことを教えてください問題」が解消されたかの確認）
-  7. 携帯からも試したいなら GitHub Actions workflow 化を検討（未着手）
+**最優先：実運用フィードバック収集（2026-04-21〜）**
+  SOAPプロンプト改善は master 投入済み。明日から実運用で数日試して以下を収集：
+  1. AI出力に「追記」「修正」した箇所をメモ（どんな情報が抜けたか、どんな表現が不自然か）
+  2. まだ補正されない音声誤変換パターン
+  3. 事業所特有の言い回し・方言への対応度
+  4. 他スタッフに試してもらった時の反応（書き癖の違い耐性）
+
+  フィードバック内容に応じて次の手を決定：
+  - 誤変換パターン追加 → systemPrompt の補正ルール追記
+  - 特定疾患・職種で弱い → Few-shot追加（PT・精神科・小児など）
+  - コストが気になる → Prompt Caching 導入（入力トークン40-50%削減）
+  - さらに精度欲しい → 2段階生成（抽出→整形の完全分離）
+
+  テスト実行手順（ローカル）：
+  - `.env.local` に `ANTHROPIC_API_KEY` 設定
+  - `npx tsx tests/prompts/soap/run.ts all all`（全7ケース・$0.05未満）
+  - 個別ケース：`npx tsx tests/prompts/soap/run.ts soap case-07-sinfo-influences-ap`
 
 **その次：看護計画の作成・修正機能（新規）**
   褥瘡計画書（実装済）とは別に、一般的な看護計画書（ADL・問題リスト・目標・介入）の作成機能を追加する
