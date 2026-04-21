@@ -136,6 +136,7 @@ export default function NewRecordPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          patientId: id,
           sInput,
           rawInput,
           previousRecords: recentRecords,
@@ -167,6 +168,7 @@ export default function NewRecordPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          patientId: id,
           sInput,
           rawInput,
           carePlan: patient.carePlan,
@@ -201,6 +203,7 @@ export default function NewRecordPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          patientId: id,
           sInput,
           rawInput,
           carePlan: patient.carePlan,

@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
-import { getAuthUser } from "@/lib/supabase-server";
+import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 import { SOAP_FEWSHOT_EXAMPLES } from "@/lib/soap-fewshot";
 
+/**
+ * 参照コンテキストの優先順位（過渡期）：
+ *   1. 看護計画書（is_draft=false の最新 plan_date）← あればこれを優先参照
+ *   2. carePlan（旧欄、過渡期のみ）← 看護計画書がない場合の補助参照
+ *   3. ケア内容リスト ← 常に参照（別経路）
+ * 看護計画書feature完全移行後に carePlan カラムを drop する想定。
+ */
 export async function POST(req: NextRequest) {
   const user = await getAuthUser();
   if (!user) {
@@ -10,16 +17,44 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { sInput, rawInput, carePlan, previousRecords, alertAnswers, questionAnswers, initialSoapRecords } = body;
+  const { patientId, sInput, rawInput, carePlan, previousRecords, alertAnswers, questionAnswers, initialSoapRecords } = body;
 
   if (!rawInput?.trim()) {
     return NextResponse.json({ error: "訪問内容が入力されていません" }, { status: 400 });
   }
 
-  // ケアプラン
-  const carePlanSection = carePlan
-    ? `\n【ケアプラン・担当者会議の方針】\n${carePlan}\n`
-    : "";
+  // 看護計画書（確定版）の取得：最優先コンテキスト
+  let activeNursingCarePlanSection = "";
+  if (patientId) {
+    try {
+      const supabase = await getServerSupabase();
+      const { data: plan } = await supabase
+        .from("nursing_care_plans")
+        .select("plan_date, nursing_goal, issues")
+        .eq("patient_id", patientId)
+        .eq("is_draft", false)
+        .order("plan_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (plan) {
+        const issues = (plan.issues as { no: number; issue: string }[] | null) ?? [];
+        const issuesText = issues.length > 0
+          ? issues.map((i) => `  ${i.no}. ${i.issue}`).join("\n")
+          : "  （なし）";
+        activeNursingCarePlanSection = `\n【看護計画書（確定版・最優先コンテキスト、作成日 ${plan.plan_date}）】\n目標：${plan.nursing_goal ?? "（未記入）"}\n療養上の課題：\n${issuesText}\n`;
+      }
+    } catch (e) {
+      // 看護計画書取得失敗は致命的でないので握りつぶす（carePlanにフォールバック）
+      console.error("active nursing care plan fetch error:", e);
+    }
+  }
+
+  // 旧 carePlan（過渡期フォールバック）：看護計画書がなければ補助参照
+  const carePlanSection = activeNursingCarePlanSection
+    ? "" // 看護計画書があれば carePlan は参照しない
+    : carePlan
+      ? `\n【ケアプラン・担当者会議の方針（旧欄・過渡期参照）】\n${carePlan}\n`
+      : "";
 
   // 過去の訪問記録（アプリ内の記録 + 初期インポート記録を統合）
   const allPrevRecords = [
@@ -53,11 +88,15 @@ export async function POST(req: NextRequest) {
   const systemPrompt = `あなたは訪問看護記録のSOAP作成AIである。看護師の話し言葉メモをSOAP形式に変換する。
 
 # 事実ソース（各項目の「出力材料」と「判断材料」の区別が重要）
+- 【看護計画書（確定版）】（提供されている場合）：**最優先のコンテキスト**。目標・療養上の課題を A・P の判断材料として必ず考慮する。計画書の課題に関する記述が今日のメモにあれば、A で課題の継続/変化を評価し、P で計画に沿った継続/見直しを示す
 - 【今回の訪問メモ】：O への直接記載、および A・P の判断材料
 - 【S情報】（提供されている場合）：S への passthrough、および A・P の判断材料（本人の訴え・感情・要望として臨床判断に必ず反映）
 - 【AIからの確認質問への回答】（提供されている場合）：O への直接記載、および A・P の判断材料
 - 【前回からの継続確認事項への回答】（提供されている場合）：O への直接記載、および A・P の判断材料
 - 【過去記録】：文体・継続事項の参考。A では前回からの変化を、P では継続/変更の判断材料として使う
+- 【ケアプラン・担当者会議の方針（旧欄・過渡期参照）】（提供されている場合）：看護計画書が未作成の場合のみ補助参照。看護計画書があればこの欄は参照しない
+
+参照優先順位：看護計画書（確定版） > 過去記録・メモ > 旧ケアプラン欄（フォールバック）
 
 特に重要：
 - AI確認質問・継続確認への回答は「メモに記載漏れがあった事実を看護師が後から補足したもの」である。空欄でなければ必ず O/A/P の適切な箇所に反映すること。回答を無視してはならない
@@ -130,13 +169,13 @@ ${SOAP_FEWSHOT_EXAMPLES}`;
     : "";
 
   const prompt = hasSInput
-    ? `${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【S情報（看護師入力済み・誤変換のみ補正してそのまま返す）】
+    ? `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【S情報（看護師入力済み・誤変換のみ補正してそのまま返す）】
 ${sInput}
 
 【今回の訪問メモ（これをO・A・Pに変換する）】
 ${rawInput}`
 
-    : `${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
+    : `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
 ${rawInput}`;
 
   // Tool use でJSON形式を強制。

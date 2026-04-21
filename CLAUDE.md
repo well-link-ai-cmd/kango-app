@@ -1,6 +1,59 @@
 # kango-app — AI訪問看護記録アシスト
 
-## 引き継ぎ（最終更新: 2026-04-16）
+## 引き継ぎ（最終更新: 2026-04-22 夜間自動進行）
+
+### 2026-04-22 完了（feat/nursing-care-plan ブランチに push）
+- **看護計画書feature Phase 1-4 + Phase 5b を一気に実装**
+  - `docs/看護計画書_手順書.md`：カイポケフォーマット準拠・責任分界（評価AI化含む）・DB設計・過渡期carePlan扱い
+  - `supabase/migrations/007_nursing_care_plans.sql`：テーブル・RLS・インデックス・トリガー（**未実行 — 朝ダッシュボードで手動実行**）
+  - `lib/storage.ts`：`NursingCarePlan` 型・CRUD・`getActiveNursingCarePlan`（確定版の最新取得）
+  - `app/api/nursing-care-plan/generate/route.ts`：目標・課題のAI下書き（from_scratch / refine 2モード）
+  - `app/api/nursing-care-plan/evaluate/route.ts`：期間SOAPから課題ごとの評価下書き（一括評価モード）
+  - `lib/nursing-care-plan-fewshot.ts`：プレースホルダー（**実記録ベースの例は看護師レビュー後に差し替え**）
+  - `tests/prompts/nursing-care-plan/`：cases.json 7件 + run.ts ランナー + README
+  - **SOAP / questions プロンプトの参照優先順位更新**：看護計画書（確定版） > carePlan（旧） > 推論。route.ts + run.ts ミラー同期済
+  - クライアント（records/new/page.tsx）から `patientId` を送るよう更新
+
+### AI確認質問の役割分離 + 保存ボタン保存中UI（2026-04-22 夜 push済）
+- `app/api/soap/questions/route.ts`：alerts（過去→今日の漏れ）と questions（今日のメモの曖昧点）を別ソース（gaps vs memo_ambiguities）から生成するよう再設計、トピック重複禁止を明記
+- `app/patients/[id]/records/new/page.tsx`：保存ボタンに `loadingSave` ステート、「保存中...」表示、二重送信ガード
+
+### 完了
+- Supabase: Google認証 + RLS + SQLマイグレーション
+- Vercel: masterマージ → 本番デプロイ
+- Googleログイン・患者一覧・ログアウト動作確認OK
+- **SOAP誤変換対策**：副雑音・緊満感・更衣・洗髪・著明の補正ルールをプロンプトに追加（2026-04-13 push済）
+- **Homeボタン追加**：訪問記録作成・看護内容リストのヘッダーに「患者一覧へ戻る」ボタン追加（push済）
+- **褥瘡計画書の手順書作成**：`docs/褥瘡計画書_手順書.md`（カイポケ4カテゴリ対応・B1以上ルール・DESIGN-R責任分界・DB設計含む）
+- **カイポケ報告書3様式のフォーマット把握**（通常報告書・精神科報告書・情報提供書）
+
+### 朝やってほしいこと（引き継ぎ）
+1. **手順書の責任者レビュー**：`docs/看護計画書_手順書.md` を責任者に共有
+2. **migration 007 の手動実行**：Supabase ダッシュボード > SQL Editor で `007_nursing_care_plans.sql` を実行（テーブル作成がないとSOAPプロンプトが看護計画書を参照できないだけで、本番影響はない）
+3. **feat/nursing-care-plan ブランチのPR確認**：preview環境で動作確認
+4. **Few-shot例の実記録**：看護師レビュー済みの実記録3〜5件を元に `lib/nursing-care-plan-fewshot.ts` の本文を作成
+5. **テストハーネス実行**：`npx tsx tests/prompts/nursing-care-plan/run.ts all all`（約$0.07、看護師レビュー用のサンプル出力を得る）
+
+### 残タスク
+- **Phase 5: 看護計画UI**（new/edit/copy + 患者詳細統合 + 評価UI + コピペ導線 + 移行ウィザード）— 2日、朝着手
+- **Phase 6: medical-reviewer 品質ゲート**
+- **Phase 7: ケア内容リスト改善**（複数項目一括追加、インライン編集、AIで整え直す、患者新規作成からの入力導線）
+- **carePlan UI 撤去**（Phase 5 の中で実施：新規作成フォームから削除、既存は読み取り専用、移行ボタン設置、最終的にカラム drop）
+
+### 責任者からの追加要望（2026-04-13）
+1. 月ごとのSOAP記録一括コピー機能（月別フォルダ分け）
+2. 褥瘡計画書の自動生成（**最優先**、リスクアセスメントから立てれていない課題を解決）
+3. 訪問看護報告書（通常／精神科）の月次自動生成
+4. 訪問看護情報提供書の自動生成（宛先4種：市町村/保健所長/学校/医療機関）
+5. 看護計画の半年評価・記録からの修正提案
+- 出力形式：カイポケに項目別コピペできるテキスト（PDFは後回し）
+
+### 完了（2026-04-14追加）
+- **報告書3様式のリサーチ完了**（リサーチャーエージェント再実行で成功）
+- **`docs/報告書3様式_手順書.md` 作成完了**（厚労省保医発0327第2号・2024年改定対応・Barthel/GAF/ADL詳細・4宛先書き分け・DB設計含む）
+
+### 完了（2026-04-16追加）
+- **褥瘡計画書機能 v1**（Phase 1-3 完了、本番デプロイ済）
 
 ### 完了
 - Supabase: Google認証 + RLS + SQLマイグレーション
