@@ -36,6 +36,7 @@ export default function NewRecordPage() {
   const [soap, setSoap] = useState<Soap>({ S: "", O: "", A: "", P: "" });
   const [soapText, setSoapText] = useState("");
   const [loadingSoap, setLoadingSoap] = useState(false);
+  const [loadingSave, setLoadingSave] = useState(false);
 
   const [step, setStep] = useState<Step>("input");
   const [error, setError] = useState("");
@@ -222,55 +223,61 @@ export default function NewRecordPage() {
   }
 
   async function handleSave() {
+    if (loadingSave) return; // 二重送信防止
     if (!soapText.trim()) { alert("先にSOAP生成を行ってください"); return; }
-    const parsed = textToSoap(soapText);
-    await saveRecord({
-      id: generateId(),
-      patientId: id,
-      visitDate,
-      rawInput,
-      S: parsed.S,
-      O: parsed.O,
-      A: parsed.A,
-      P: parsed.P,
-      createdAt: new Date().toISOString(),
-    });
-    // 記録を正式保存できたので下書きは破棄し、以降の自動保存を止める
-    clearDraft(id);
-    setRecordSaved(true);
-    setLastSavedAt(null);
+    setLoadingSave(true);
+    try {
+      const parsed = textToSoap(soapText);
+      await saveRecord({
+        id: generateId(),
+        patientId: id,
+        visitDate,
+        rawInput,
+        S: parsed.S,
+        O: parsed.O,
+        A: parsed.A,
+        P: parsed.P,
+        createdAt: new Date().toISOString(),
+      });
+      // 記録を正式保存できたので下書きは破棄し、以降の自動保存を止める
+      clearDraft(id);
+      setRecordSaved(true);
+      setLastSavedAt(null);
 
-    // ケア内容が登録済み & 記録が3件以上ある場合のみdiff分析を実行（AIコスト削減）
-    const allRecords = await getRecords(id);
-    if (nursingItems.length > 0 && allRecords.length >= 3) {
-      setLoadingDiff(true);
-      setStep("nursing-update");
-      try {
-        const latest5 = allRecords.sort((a, b) => b.visitDate.localeCompare(a.visitDate)).slice(0, 5);
-        const res = await fetch("/api/nursing-contents/diff", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            currentItems: nursingItems.map(item => item.text),
-            records: latest5.map(r => ({ visitDate: r.visitDate, S: r.S, O: r.O, A: r.A, P: r.P })),
-            carePlan: patient?.carePlan,
-          }),
-        });
-        if (!res.ok) throw new Error("diff分析に失敗しました");
-        const data = await res.json();
-        if ((data.additions?.length > 0) || (data.removals?.length > 0)) {
-          setDiffResult(data);
-        } else {
+      // ケア内容が登録済み & 記録が3件以上ある場合のみdiff分析を実行（AIコスト削減）
+      const allRecords = await getRecords(id);
+      if (nursingItems.length > 0 && allRecords.length >= 3) {
+        setLoadingDiff(true);
+        setStep("nursing-update");
+        try {
+          const latest5 = allRecords.sort((a, b) => b.visitDate.localeCompare(a.visitDate)).slice(0, 5);
+          const res = await fetch("/api/nursing-contents/diff", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              currentItems: nursingItems.map(item => item.text),
+              records: latest5.map(r => ({ visitDate: r.visitDate, S: r.S, O: r.O, A: r.A, P: r.P })),
+              carePlan: patient?.carePlan,
+            }),
+          });
+          if (!res.ok) throw new Error("diff分析に失敗しました");
+          const data = await res.json();
+          if ((data.additions?.length > 0) || (data.removals?.length > 0)) {
+            setDiffResult(data);
+          } else {
+            router.push(`/patients/${id}`);
+          }
+        } catch {
+          // diff失敗しても記録は保存済みなので問題なし
           router.push(`/patients/${id}`);
+        } finally {
+          setLoadingDiff(false);
         }
-      } catch {
-        // diff失敗しても記録は保存済みなので問題なし
+      } else {
         router.push(`/patients/${id}`);
-      } finally {
-        setLoadingDiff(false);
       }
-    } else {
-      router.push(`/patients/${id}`);
+    } finally {
+      setLoadingSave(false);
     }
   }
 
@@ -598,9 +605,13 @@ export default function NewRecordPage() {
               value={soapText}
               onChange={(e) => setSoapText(e.target.value)}
             />
-            <button onClick={handleSave} className="btn-save">
+            <button
+              onClick={handleSave}
+              disabled={loadingSave}
+              className="btn-save"
+            >
               <Save size={20} />
-              記録を保存する
+              {loadingSave ? "保存中..." : "記録を保存する"}
             </button>
           </div>
         )}

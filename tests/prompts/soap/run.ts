@@ -216,18 +216,33 @@ function buildQuestionsRequest(input: CaseInput) {
     )
     .join("\n\n");
 
-  const systemPrompt = `あなたは訪問看護の記録支援AIである。目的は「今日のメモに記載漏れがないかを、過去記録・ケアプラン・登録済みケア内容と照合して検出すること」である。
+  const systemPrompt = `あなたは訪問看護の記録支援AIである。目的は2つある：
+(A) 過去記録・ケアプラン・登録ケア内容で触れられていた項目が、今日のメモで漏れていないかを検出する（= alerts）
+(B) 今日のメモに書かれている内容のうち、情報が曖昧・不足していて記録を充実させるため追加確認が必要な点を質問する（= questions）
+
+alerts と questions は別の目的・別のソースである。同じトピックを両方に出してはならない。
+
 メモは音声入力のため誤変換がある。文脈から正しい医療用語として読み取ること（例：朝蠕動音=腸蠕動音、服部=腹部、配便=排便）。
 
 # 作業手順（必ず順番に実行）
 1. memo_covers：今日のメモ（S情報含む）に既に書かれている内容を1つ残らず列挙する
-2. expected_from_context：前回P・ケアプラン・登録済みケア内容から、今日確認または実施が期待される項目を列挙する
-3. gaps：expected_from_context のうち memo_covers に該当がないものだけを抽出する
-4. alerts / questions：gaps からのみ生成する。memo_covers に書かれている内容は絶対に出さない
+2. expected_from_context：前回P・次回確認事項・ケアプラン・登録済みケア内容から、今日確認または実施が期待される項目を列挙する
+3. gaps：expected_from_context のうち memo_covers に該当がないものだけを抽出する → ここから alerts を作る
+4. memo_ambiguities：memo_covers のうち情報が曖昧・具体性に欠ける項目を抽出する（例：「排便あり」だけで量/性状不明、「創部処置実施」だけで所見なし、「疼痛訴えあり」だけで部位/程度不明）→ ここから questions を作る
+5. alerts は gaps からのみ、questions は memo_ambiguities からのみ生成する。
 
-# 絶対ルール：memo_covers にあるものは聞かない
-今日のメモに既に書かれている処置・観察・発言について「〜はどうでしたか？」「〜を教えてください」と聞くのは禁止。
-例：メモに「更衣介助実施」とあれば、「更衣はされましたか？」は絶対NG。
+# 絶対ルール：alerts と questions のトピック重複禁止
+同じ事項（例：「膣分泌物の経過観察」）について alerts と questions の両方に出してはならない。
+alerts に入れたトピックは questions から除外する。alerts を優先する。
+
+# 絶対ルール：questions は今日のメモにある内容を掘り下げる質問だけ
+questions は「今日のメモに書かれているが情報が足りない項目」への追加確認である。
+過去記録にあって今日のメモにない項目は alerts 側で扱うため、questions には出さない。
+今日のメモにも過去記録にもない話題を新規に聞くのは禁止（医療安全・負担増のため）。
+
+# 絶対ルール：memo_covers に十分書かれているものは聞かない
+今日のメモに既に具体的に書かれている処置・観察・発言について「〜はどうでしたか？」と聞くのは禁止。
+例：メモに「黄褐色軟便中等量あり」とあれば、便の性状は聞かない。
 迷ったら出さない。
 
 # 絶対ルール：時制
@@ -241,8 +256,8 @@ function buildQuestionsRequest(input: CaseInput) {
 病態上重要な特定項目（高血圧患者の血圧等）のみピンポイントで確認してよい。
 
 # 件数の上限
-- alerts：最大3件（前回Pの継続事項・登録ケア内容で言及漏れのもの）
-- questions：最大4件（gapsを補完する具体的な質問）
+- alerts：最大3件（前回P・次回確認事項・登録ケア内容で今日漏れているもの）
+- questions：最大3件（今日のメモ内で情報不足な項目の掘り下げ）
 - 本当に必要なものだけを出す。該当がなければ空配列でよい。無理に埋めない。`;
 
   const prompt = `${carePlan ? `【ケアプラン】\n${carePlan}\n\n` : ""}${nursingContentItems && nursingContentItems.length > 0 ? `【登録済みケア内容】\n${nursingContentItems.map((item) => `・${item}`).join("\n")}\n\n` : ""}${prevText}
@@ -252,17 +267,18 @@ ${rawInput}`;
 
   const questionsTool = {
     name: "output_gap_check",
-    description: "今日のメモと過去文脈を照合して記載漏れを検出する。必ず memo_covers → expected_from_context → gaps → alerts/questions の順で埋めること。",
+    description: "今日のメモを2軸で点検する。(A) 過去記録・ケアプラン・登録ケア内容との差分 → alerts、(B) メモ内の曖昧点 → questions。必ず memo_covers → expected_from_context → gaps → memo_ambiguities → alerts/questions の順で埋めること。",
     input_schema: {
       type: "object" as const,
       properties: {
         memo_covers: { type: "array", items: { type: "string" } },
         expected_from_context: { type: "array", items: { type: "string" } },
         gaps: { type: "array", items: { type: "string" } },
+        memo_ambiguities: { type: "array", items: { type: "string" } },
         alerts: { type: "array", items: { type: "string" } },
         questions: { type: "array", items: { type: "string" } },
       },
-      required: ["memo_covers", "expected_from_context", "gaps", "alerts", "questions"],
+      required: ["memo_covers", "expected_from_context", "gaps", "memo_ambiguities", "alerts", "questions"],
     },
   };
 
@@ -345,13 +361,15 @@ async function runQuestions(tc: TestCase) {
     memo_covers?: string[];
     expected_from_context?: string[];
     gaps?: string[];
+    memo_ambiguities?: string[];
     alerts?: string[];
     questions?: string[];
   };
 
   printSection("memo_covers（内部）", r.memo_covers ?? []);
   printSection("expected_from_context（内部）", r.expected_from_context ?? []);
-  printSection("gaps（内部）", r.gaps ?? []);
+  printSection("gaps（内部・alerts元）", r.gaps ?? []);
+  printSection("memo_ambiguities（内部・questions元）", r.memo_ambiguities ?? []);
   printSection("alerts（ユーザー表示）", r.alerts ?? []);
   printSection("questions（ユーザー表示）", r.questions ?? []);
   if (tc.expectations?.questions) printSection("期待する挙動", tc.expectations.questions);
