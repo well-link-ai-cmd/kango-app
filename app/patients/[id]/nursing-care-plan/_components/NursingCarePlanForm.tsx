@@ -627,12 +627,15 @@ export default function NursingCarePlanForm({
       </section>
 
       {/* 衛生材料 */}
-      <section className="card p-5 space-y-3">
+      <section className="card p-5 space-y-3" style={{ borderLeft: "3px solid var(--accent-error, #e53e3e)" }}>
         <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--text-secondary)" }}>
           <Package size={16} />
           衛生材料の情報
-          <UserInputBadge />
+          <SafetyCriticalBadge />
         </h2>
+        <p className="text-xs" style={{ color: "var(--accent-error, #e53e3e)" }}>
+          ※ 医療材料の種類・サイズ・数量は誤選定時の医療安全リスクが高いため、AI下書きを行わず看護師の手入力のみで運用しています。
+        </p>
 
         <div className="flex gap-3 text-sm">
           <label className="flex items-center gap-1">
@@ -731,6 +734,19 @@ function UserInputBadge() {
     >
       <UserIcon size={11} />
       看護師記入
+    </span>
+  );
+}
+
+function SafetyCriticalBadge() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded"
+      style={{ background: "rgba(229, 62, 62, 0.12)", color: "var(--accent-error, #c53030)", fontWeight: 600 }}
+      title="医療安全上AIによる下書きを禁止している項目です"
+    >
+      <UserIcon size={11} />
+      看護師記入（AI下書き禁止領域）
     </span>
   );
 }

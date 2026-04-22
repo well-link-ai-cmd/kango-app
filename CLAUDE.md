@@ -2,17 +2,23 @@
 
 ## 引き継ぎ（最終更新: 2026-04-22 夜間自動進行）
 
-### 2026-04-22 完了（feat/nursing-care-plan ブランチに push）
-- **看護計画書feature Phase 1-4 + Phase 5b を一気に実装**
+### 2026-04-22 完了（feat/nursing-care-plan ブランチに push、Phase 1-7 全完了）
+- **看護計画書feature Phase 1-7 すべて実装＋医療レビュー反映済み**
   - `docs/看護計画書_手順書.md`：カイポケフォーマット準拠・責任分界（評価AI化含む）・DB設計・過渡期carePlan扱い
   - `supabase/migrations/007_nursing_care_plans.sql`：テーブル・RLS・インデックス・トリガー（**未実行 — 朝ダッシュボードで手動実行**）
   - `lib/storage.ts`：`NursingCarePlan` 型・CRUD・`getActiveNursingCarePlan`（確定版の最新取得）
-  - `app/api/nursing-care-plan/generate/route.ts`：目標・課題のAI下書き（from_scratch / refine 2モード）
-  - `app/api/nursing-care-plan/evaluate/route.ts`：期間SOAPから課題ごとの評価下書き（一括評価モード）
+  - AI生成API：`nursing-care-plan/generate`（目標・課題）、`nursing-care-plan/evaluate`（期間SOAP評価）、`nursing-contents/refine`（ケア内容整理）
   - `lib/nursing-care-plan-fewshot.ts`：プレースホルダー（**実記録ベースの例は看護師レビュー後に差し替え**）
   - `tests/prompts/nursing-care-plan/`：cases.json 7件 + run.ts ランナー + README
   - **SOAP / questions プロンプトの参照優先順位更新**：看護計画書（確定版） > carePlan（旧） > 推論。route.ts + run.ts ミラー同期済
   - クライアント（records/new/page.tsx）から `patientId` を送るよう更新
+  - **看護計画書UI（Phase 5）**：一覧・新規・編集・複製ページ、共通フォームコンポーネント、AI下書きバッジ／看護師記入バッジ／安全上AI禁止バッジの3種、2モード生成（from_scratch / refine）、一括評価、カイポケコピペ、旧carePlan移行バナー
+  - **ケア内容リスト改善（Phase 7）**：複数行一括追加・インライン編集・「AIで整え直す」機能（プレビュー→承認→1回のみ元に戻す）、患者新規/編集フォームからの入力導線
+  - **medical-reviewer 品質ゲート（Phase 6）通過**：中リスク3件 + 低リスク3件の指摘を反映
+    - evaluate の finding_draft 候補から「目標達成」「中止検討」削除（看護師判定領域）
+    - 衛生材料セクションに赤系「AI下書き禁止領域」バッジ＋説明文追加
+    - refine プロンプトに「報告条件・頻度・部位限定・数値基準は削らない」制約追加
+    - 誤変換補正に関節・仰臥位追加、nursing_goal の家族支援を条件付き化、evaluate のフォールバック表現を下書き形に
 
 ### AI確認質問の役割分離 + 保存ボタン保存中UI（2026-04-22 夜 push済）
 - `app/api/soap/questions/route.ts`：alerts（過去→今日の漏れ）と questions（今日のメモの曖昧点）を別ソース（gaps vs memo_ambiguities）から生成するよう再設計、トピック重複禁止を明記

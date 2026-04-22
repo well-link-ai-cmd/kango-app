@@ -212,7 +212,8 @@ Tool use（output_issue_evaluations）のJSONのみ。
 500字以内、期間開始と終了の対比、ADL/症状/バイタル/服薬/家族の観点。
 
 # finding_draft
-500字以内、候補：継続/改善傾向/悪化傾向/目標達成/見直し必要/中止検討、根拠を1-2点挙げ、「〜と考えられる」語尾。`;
+500字以内、候補：継続/改善傾向/悪化傾向/達成傾向が見られる/見直しの余地あり、根拠を1-2点挙げ、「〜と考えられる」語尾。
+禁止語：「目標達成」「中止」「中止検討」（看護師判断領域）。`;
 
   const nursingContentSection = input.nursingContentItems && input.nursingContentItems.length > 0
     ? `\n【登録済みケア内容（参考）】\n${input.nursingContentItems.map((item) => `・${item}`).join("\n")}`
