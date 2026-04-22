@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { savePatient, generateId, soapToText, textToSoap, type CareLevel, type DoctorInfo, type CareManagerInfo } from "@/lib/storage";
-import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2 } from "lucide-react";
+import { savePatient, saveNursingContents, generateId, soapToText, textToSoap, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem } from "@/lib/storage";
+import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2, ClipboardList } from "lucide-react";
 import Link from "next/link";
 
 const CARE_LEVELS: CareLevel[] = [
@@ -25,12 +25,30 @@ export default function NewPatientPage() {
   const [carePlan, setCarePlan] = useState("");
   const [openCarePlan, setOpenCarePlan] = useState(false);
 
+  // ケア内容リスト（初回入力）— 複数行対応
+  const [openNursingContents, setOpenNursingContents] = useState(false);
+  const [nursingContentsText, setNursingContentsText] = useState("");
+
   // 直近のSOAP記録（導入時の初期データ）— 1つのtextareaに統合
   const [openInitialSoap, setOpenInitialSoap] = useState(false);
   const [initialSoapText1, setInitialSoapText1] = useState("");
   const [initialSoapDate1, setInitialSoapDate1] = useState("");
   const [initialSoapText2, setInitialSoapText2] = useState("");
   const [initialSoapDate2, setInitialSoapDate2] = useState("");
+
+  // 複数行・箇条書きテキストを行単位で分割
+  function parseNursingContentLines(raw: string): string[] {
+    return raw
+      .split("\n")
+      .map((line) =>
+        line
+          .trim()
+          .replace(/^[・•\-＊\*\+]\s*/, "")
+          .replace(/^\d+[\.\)]\s*/, "")
+          .trim()
+      )
+      .filter((line) => line.length > 0);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,8 +64,9 @@ export default function NewPatientPage() {
       // SOAP 4フィールドが全部空のレコードは保存しない（再表示時に頭文字だけ残るのを防ぐ）
       .filter(r => r.S.trim() || r.O.trim() || r.A.trim() || r.P.trim());
 
+    const patientId = generateId();
     await savePatient({
-      id: generateId(),
+      id: patientId,
       name: name.trim(),
       nameKana: nameKana.trim() || undefined,
       age: parseInt(age) || 0,
@@ -62,6 +81,25 @@ export default function NewPatientPage() {
       initialSoapRecords: initialSoapRecords.length > 0 ? initialSoapRecords : undefined,
       createdAt: new Date().toISOString(),
     });
+
+    // ケア内容リストを初回保存
+    const lines = parseNursingContentLines(nursingContentsText);
+    if (lines.length > 0) {
+      const now = new Date().toISOString();
+      const items: NursingContentItem[] = lines.map((text) => ({
+        id: generateId(),
+        text,
+        isActive: true,
+        source: "manual",
+        addedAt: now,
+      }));
+      await saveNursingContents({
+        patientId,
+        items,
+        updatedAt: now,
+      });
+    }
+
     router.push("/patients");
   }
 
@@ -278,6 +316,44 @@ export default function NewPatientPage() {
                   value={carePlan}
                   onChange={(e) => setCarePlan(e.target.value)}
                 />
+              </div>
+            )}
+          </div>
+
+          {/* Nursing Contents（ケア内容リスト） */}
+          <div className="card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOpenNursingContents(!openNursingContents)}
+              className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-[rgba(0,200,200,0.02)]"
+            >
+              <div className="text-left flex items-start gap-3">
+                <ClipboardList size={20} style={{ color: "var(--accent-cyan)", marginTop: "2px" }} />
+                <div>
+                  <p className="font-semibold" style={{ color: "var(--text-primary)" }}>ケア内容リスト</p>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>訪問時に実施するケアを登録（複数行・箇条書き対応）</p>
+                </div>
+              </div>
+              {openNursingContents
+                ? <ChevronUp size={18} style={{ color: "var(--text-muted)" }} />
+                : <ChevronDown size={18} style={{ color: "var(--text-muted)" }} />}
+            </button>
+            {openNursingContents && (
+              <div className="px-5 pb-5 animate-fade-in">
+                <p className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>
+                  1行1項目、または箇条書き（・や番号）で入力してください。後から患者ページの「看護内容リスト」で編集・AI整理もできます。
+                </p>
+                <textarea
+                  rows={5}
+                  className="input-field text-sm"
+                  style={{ resize: "vertical", fontFamily: "inherit" }}
+                  placeholder={"例：\n・バイタル測定（血圧・脈拍・体温・SpO2）\n・排便状態の確認\n・創部ガーゼ交換\n・ROM訓練\n・清拭介助"}
+                  value={nursingContentsText}
+                  onChange={(e) => setNursingContentsText(e.target.value)}
+                />
+                <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+                  {parseNursingContentLines(nursingContentsText).length} 件が登録されます
+                </p>
               </div>
             )}
           </div>
