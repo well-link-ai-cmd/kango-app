@@ -140,6 +140,8 @@ ${rawInput}`;
     const response = await generateAiResponse(prompt, systemPrompt, {
       temperature: 0.2,
       tool: questionsTool,
+      // systemを1時間キャッシュ。SOAP生成と対で呼ばれるため同じウィンドウ内でヒット率高
+      cacheSystemTtl: "1h",
     });
 
     if (!response.toolInput) {

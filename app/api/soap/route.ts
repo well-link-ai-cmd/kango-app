@@ -172,6 +172,9 @@ ${rawInput}`;
       tool: soapTool,
       // extracted_facts / coverage_check の分だけ余裕を持たせる
       maxTokens: 6144,
+      // Few-shot含むsystemを1時間キャッシュ。事業所全体で共有されるため
+      // 誰かが1時間以内に書き続ければ2件目以降は入力単価1/10で済む
+      cacheSystemTtl: "1h",
     });
 
     if (!response.toolInput) {

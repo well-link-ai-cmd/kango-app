@@ -30,6 +30,13 @@ interface GenerateOptions {
   temperature?: number;
   /** tool_useで構造化JSONを強制。指定するとClaudeは必ずこのスキーマに従ったJSONを返す */
   tool?: AiTool;
+  /**
+   * systemプロンプトにPrompt Caching（ephemeral）を適用する。
+   * "5m"（既定TTL）または "1h"（Extended TTL）を指定。
+   * 指定時はsystemが content block 形式に変換され、cache_control が付与される。
+   * 呼び出し頻度が高いルート（SOAP生成・questions生成）でのみ有効化推奨。
+   */
+  cacheSystemTtl?: "5m" | "1h";
 }
 
 /**
@@ -54,12 +61,27 @@ export async function generateAiResponse(
   const timeoutMs = options?.timeoutMs ?? 30000;
   const maxTokens = options?.maxTokens ?? 4096;
 
+  // Prompt Caching 用に system を content block 形式へ変換
+  // 注：cache_control は prefix のキャッシュ範囲を示すマーカー。system に付けると
+  // tools も含めた prefix 全体がキャッシュ対象となる（tools → system → messages の順）
+  const systemParam = systemPrompt
+    ? options?.cacheSystemTtl
+      ? [
+          {
+            type: "text" as const,
+            text: systemPrompt,
+            cache_control: { type: "ephemeral" as const, ttl: options.cacheSystemTtl },
+          },
+        ]
+      : systemPrompt
+    : undefined;
+
   const message = await Promise.race([
     client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: maxTokens,
       ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
-      ...(systemPrompt ? { system: systemPrompt } : {}),
+      ...(systemParam ? { system: systemParam } : {}),
       ...(options?.tool ? {
         tools: [options.tool],
         tool_choice: { type: "tool" as const, name: options.tool.name },
