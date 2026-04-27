@@ -1,6 +1,78 @@
 # kango-app — AI訪問看護記録アシスト
 
-## 引き継ぎ（最終更新: 2026-04-22 夜間自動進行）
+## 引き継ぎ（最終更新: 2026-04-27 Phase B v3 採用、push判断待ち）
+
+### 🔄 進行中: SOAPプロンプト Phase B 改修（v3 採用・未コミット・未push）
+
+**ブランチ**: `feat/nursing-care-plan`（既存PRのまま、SOAP改修分が乗っている）
+
+**Phase A〜B で実施済み（全部 working tree のみ。commit していない）**:
+- A1: `lib/ai-client.ts` に `model` / `usage` パラメータ追加（Haiku/Sonnet 切替）
+- A1: `tests/prompts/soap/run.ts` に MODEL/OUTPUT_JSON 対応 + promptHash/promptMeta/casesFileHash/outputChars 記録
+- A1: `tests/prompts/soap/README.md` に並走モード・baseline手順を追記
+- A2: `tests/prompts/soap/baseline-2026-04-27.json` 保存（promptHash=593f9cb0、Haiku 7ケース）
+- B1: tool description 簡素化（663→473char、-28.7%）
+- B2: 強調語整理（最重要3項目に集中：推測禁止／補正リスト優先／全段階補正）
+- B3: 冗長表現精査（systemPromptChars 10838→10234、-5.6%）
+- B4: extracted_facts 1事実=1要素を明記
+- 誤変換リスト追加: 胎動→体動／〜の正常→〜の性状／侵入部→刺入部／外装→咳嗽／常用→上葉／服雑音→副雑音
+- 過去記録 vs 補正リスト優先順位を文体ルールに明記（過去記録に汚染データがあっても補正後の用語で書く）
+- `tests/prompts/soap/cases.json` に 2ケース追加（case-03b/case-03c、計9ケース）
+- post-B 計測: `tests/prompts/soap/post-phase-b-2026-04-27.json` 保存（promptHash=514643d7）
+- 集計ツール: `summarize-baseline.ts` / `diff-snapshot.ts` / `show-review.ts` 追加
+- `~/.claude/rules/ai-guardrails.md` 誤変換リスト＋過去記録優先順位を追記
+- `~/.claude/rules/ai-record-tools-design.md` 落とし穴11「過去記録の誤変換引きずり」を追記
+- `tests/prompts/soap/CHANGELOG.md` 新規作成（改修履歴）
+
+**計測結果（baseline 7ケース vs post-B v3 共通7ケース）**:
+- input_tokens 合計 -5,688 / output_tokens 合計 -950
+- コスト ¥18.53 → ¥16.91（-8.73%）
+- 1ケース平均 ¥2.65 → ¥2.42
+- promptHash 593f9cb0 → 96040783（変更検知 ✅）
+
+**v3 で追加した修正（B案：S=""死守）**:
+- alertAnswersSection / answersSection のラベルを「必ず O/A/P に反映。S 欄には入れない」に変更
+- S 厳格ルールに「[AI回答][継続確認回答] の本文は S に入れない」を追加
+
+**最終レビュー結果（v3 全ケース合格）**:
+- ✅ case-01：S=「膝は昨日より楽になった」（baseline と同じ既存挙動。Phase B 未解決の残課題）
+- ✅ case-02 / case-03 / case-04 / case-05：S=空、回帰なし
+- ✅ case-03b（新6パターン）：胎動→体動／〜の性状／刺入部／咳嗽／上葉／副雑音 全て補正
+- ✅ case-03c（過去記録汚染）：出力に「常用/複雑音/辱層/著名」が引きずられず「上葉/副雑音/褥瘡/著明」に揃った
+- ✅ **case-06（[AI回答]反映）**：S=空 を v3 で達成。A/P で AI回答全反映（NRS2/レスキュー/ショートステイ）
+- ✅ case-07（S情報→A/P連動）：S passthrough OK、A で疼痛増悪・睡眠障害、P で疼痛管理見直し（baselineより改善）
+
+### 🔁 ターミナル再開時にやること
+
+1. **master push 判断** — v3 で全合格、commit メッセージ案を出して push するか
+2. Phase C（Few-shot 拡充：慢性疾患安定期＋sInputあり）に進むか、実運用フィードバック先行か
+3. case-01 の S 既存挙動（メモ本人発言が S に入る）の対応を Phase D として将来やるか保留
+
+### 続きを始める方法
+
+別端末でも同じ場所から再開できるよう、`feat/nursing-care-plan` ブランチに**まだ commit していない**ので注意。
+ターミナル再起動後の最初のコマンド推奨：
+
+```bash
+cd C:/Users/thegl/Documents/kango-app
+git status --short                                    # 未コミット変更の確認（11ファイル想定）
+npx tsx tests/prompts/soap/show-review.ts | less      # 6ケースの baseline / post-B 比較を再表示
+npx tsx tests/prompts/soap/diff-snapshot.ts \
+  tests/prompts/soap/baseline-2026-04-27.json \
+  tests/prompts/soap/post-phase-b-2026-04-27.json     # トークン削減量の再確認
+```
+
+Claude Code 再起動時は **「kango-app SOAP Phase B レビューの続き」** と一言投げれば、本セクションを読んで再開する。
+
+### 文字化け対策メモ（2026-04-27 の事象）
+
+長文日本語を tsx で連続出力するとき Git Bash 表示が化けることがある。
+対策：ターミナル再起動 →（必要なら）`chcp 65001 && export LANG=ja_JP.UTF-8` →`git status` で復帰確認。
+ファイル本体は UTF-8 で保存済みのため、表示崩れだけ。
+
+---
+
+## 引き継ぎ（過去分: 2026-04-22 夜間自動進行）
 
 ### 2026-04-22 完了（feat/nursing-care-plan ブランチに push、Phase 1-7 全完了）
 - **看護計画書feature Phase 1-7 すべて実装＋医療レビュー反映済み**
