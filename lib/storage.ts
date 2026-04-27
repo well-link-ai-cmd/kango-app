@@ -811,6 +811,198 @@ export async function deletePressureUlcerPlan(id: string): Promise<void> {
   if (error) console.error("deletePressureUlcerPlan error:", error);
 }
 
+// =============================================================
+// 訪問看護計画書（nursing_care_plans）
+// カイポケ「訪問看護計画書」フォーマット準拠
+// 手順書: docs/看護計画書_手順書.md
+// =============================================================
+
+export type NursingCarePlanType = "介護" | "医療";
+export type NursingCarePlanTitle = "共通" | "看護" | "リハ";
+
+/** 療養上の課題・支援内容 1行分 */
+export interface NursingCarePlanIssue {
+  no: number;                  // 行番号
+  date?: string;               // 記入日 YYYY-MM-DD
+  issue: string;               // 課題・支援内容（AI下書き可・2500字）
+  evaluation?: string;         // 評価（AI下書き可・期間SOAP総合評価・看護師確認必須・2500字）
+  evaluatedAt?: string;        // 評価生成日時
+}
+
+export interface NursingCarePlan {
+  id: string;
+  patientId: string;
+
+  // 監査情報
+  createdAt: string;
+  updatedAt: string;
+
+  // 基本情報
+  planDate: string;                        // 作成年月日 YYYY-MM-DD
+  planType: NursingCarePlanType;           // 介護 / 医療
+  planTitle: NursingCarePlanTitle;         // 共通 / 看護 / リハ
+  isDraft: boolean;                        // 下書き / 確定
+
+  // 作成者（署名印字項目）
+  authorName?: string;
+  authorTitle?: string;
+  author2Name?: string;
+  author2Title?: string;
+
+  // 看護・リハビリの目標（3000字、AI下書き可）
+  nursingGoal?: string;
+
+  // 療養上の課題・支援内容（複数行）
+  issues: NursingCarePlanIssue[];
+
+  // 衛生材料の情報（看護師手入力、AI禁止）
+  hasSupplies: boolean;
+  supplyProcedure?: string;     // 処置の内容（3000字）
+  supplyMaterials?: string;     // 衛生材料（種類・サイズ）等（3000字）
+  supplyQuantity?: string;      // 必要量（3000字）
+
+  // 備考（3000字、AI補助可）
+  remarks?: string;
+
+  // AI生成メタ情報
+  aiModel?: string;
+  aiPromptVersion?: string;
+  aiGeneratedAt?: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function nursingCarePlanFromRow(row: any): NursingCarePlan {
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    planDate: row.plan_date,
+    planType: (row.plan_type ?? "介護") as NursingCarePlanType,
+    planTitle: (row.plan_title ?? "共通") as NursingCarePlanTitle,
+    isDraft: row.is_draft ?? true,
+    authorName: row.author_name ?? undefined,
+    authorTitle: row.author_title ?? undefined,
+    author2Name: row.author2_name ?? undefined,
+    author2Title: row.author2_title ?? undefined,
+    nursingGoal: row.nursing_goal ?? undefined,
+    issues: (row.issues ?? []) as NursingCarePlanIssue[],
+    hasSupplies: row.has_supplies ?? false,
+    supplyProcedure: row.supply_procedure ?? undefined,
+    supplyMaterials: row.supply_materials ?? undefined,
+    supplyQuantity: row.supply_quantity ?? undefined,
+    remarks: row.remarks ?? undefined,
+    aiModel: row.ai_model ?? undefined,
+    aiPromptVersion: row.ai_prompt_version ?? undefined,
+    aiGeneratedAt: row.ai_generated_at ?? undefined,
+  };
+}
+
+/** 患者の看護計画書一覧（新しい順） */
+export async function getNursingCarePlans(patientId: string): Promise<NursingCarePlan[]> {
+  const { data, error } = await getSupabase()
+    .from("nursing_care_plans")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("plan_date", { ascending: false });
+
+  if (error) {
+    console.error("getNursingCarePlans error:", error);
+    return [];
+  }
+  return (data ?? []).map(nursingCarePlanFromRow);
+}
+
+/** 単一の看護計画書を取得 */
+export async function getNursingCarePlan(id: string): Promise<NursingCarePlan | null> {
+  const { data, error } = await getSupabase()
+    .from("nursing_care_plans")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getNursingCarePlan error:", error);
+    return null;
+  }
+  return data ? nursingCarePlanFromRow(data) : null;
+}
+
+/**
+ * 「現在有効な看護計画書」を取得。
+ * is_draft=false の中で plan_date が最新のもの。
+ * SOAP生成時の最優先コンテキストとして使う。
+ */
+export async function getActiveNursingCarePlan(patientId: string): Promise<NursingCarePlan | null> {
+  const { data, error } = await getSupabase()
+    .from("nursing_care_plans")
+    .select("*")
+    .eq("patient_id", patientId)
+    .eq("is_draft", false)
+    .order("plan_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getActiveNursingCarePlan error:", error);
+    return null;
+  }
+  return data ? nursingCarePlanFromRow(data) : null;
+}
+
+/** 新規作成（id未指定）または更新（id指定） */
+export async function saveNursingCarePlan(
+  plan: Omit<NursingCarePlan, "id" | "createdAt" | "updatedAt"> & { id?: string }
+): Promise<NursingCarePlan | null> {
+  const userId = await getCurrentUserId();
+
+  const row = {
+    ...(plan.id ? { id: plan.id } : {}),
+    patient_id: plan.patientId,
+    plan_date: plan.planDate,
+    plan_type: plan.planType,
+    plan_title: plan.planTitle,
+    is_draft: plan.isDraft,
+    author_name: plan.authorName ?? null,
+    author_title: plan.authorTitle ?? null,
+    author2_name: plan.author2Name ?? null,
+    author2_title: plan.author2Title ?? null,
+    nursing_goal: plan.nursingGoal ?? null,
+    issues: plan.issues ?? [],
+    has_supplies: plan.hasSupplies,
+    supply_procedure: plan.supplyProcedure ?? null,
+    supply_materials: plan.supplyMaterials ?? null,
+    supply_quantity: plan.supplyQuantity ?? null,
+    remarks: plan.remarks ?? null,
+    ai_model: plan.aiModel ?? null,
+    ai_prompt_version: plan.aiPromptVersion ?? null,
+    ai_generated_at: plan.aiGeneratedAt ?? null,
+    user_id: userId,
+    ...(plan.id ? {} : { created_by: userId }),
+  };
+
+  const { data, error } = await getSupabase()
+    .from("nursing_care_plans")
+    .upsert(row)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("saveNursingCarePlan error:", error);
+    return null;
+  }
+  return nursingCarePlanFromRow(data);
+}
+
+/** 削除 */
+export async function deleteNursingCarePlan(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("nursing_care_plans")
+    .delete()
+    .eq("id", id);
+  if (error) console.error("deleteNursingCarePlan error:", error);
+}
+
 // ---- localStorageからの自動移行 ----
 
 const MIGRATION_KEY = "kango_migrated_to_supabase";
