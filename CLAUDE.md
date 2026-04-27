@@ -1,6 +1,66 @@
 # kango-app — AI訪問看護記録アシスト
 
-## 引き継ぎ（最終更新: 2026-04-16）
+## 引き継ぎ（最終更新: 2026-04-27 SOAP Phase B 完了）
+
+### 完了（2026-04-27）
+
+#### SOAP プロンプト Phase B 改修（master マージ済・PR #7）
+- B1: tool description 簡素化（663→473char、-28.7%）
+- B2: 強調語整理。最優先3項目に集中（推測禁止／補正リスト優先／全段階補正）
+- B3: 冗長表現精査（systemPromptChars 10838→10432）
+- B4: extracted_facts「1事実=1要素」を明記
+- 誤変換リスト追加6パターン：胎動→体動／〜の正常→〜の性状／侵入部→刺入部／外装→咳嗽／常用→上葉／服雑音→副雑音
+- 過去記録の医療用語が補正リストの誤変換と一致したら補正後の用語で書く（過去記録に揃えない）
+- alertAnswers/answers ラベルを「O/A/P に反映。S 欄には入れない」に明確化
+- ai-client.ts に model（haiku/sonnet）/usage パラメータ追加
+- cases.json 拡張（case-03b/case-03c）9ケース化
+- テストハーネス整備：summarize-baseline / diff-snapshot / compare-s / show-review / show-case06-v3 / quality-gate
+- 計測：1ケース ¥2.65→¥2.42（-8.73%）。9ケース全合格。promptHash 593f9cb0→96040783
+- preview実環境で全要件クリア確認済み（誤変換補正・過去記録優先・S=空・[AI回答]反映・S情報passthrough）
+
+### 進行中タスク（次回再開時）
+
+#### 看護計画書feature（Phase D 着手待機中）
+- ブランチ: `feat/nursing-care-plan`（PR #6 draft 化）
+- 現状コードはカイポケフォーマット非互換（`#1 (観察)(ケア)(指導)` の構造化なし、issue が単一文字列）
+- ユーザー要望：旧carePlan欄の内容を新規計画書にそのまま引き継げる導線、カイポケフォーマット踏襲
+- リサーチ結果（memory/project_kango_nanda.md）：
+  - ユーザー言及の「#1 (観察)(ケア)(指導)」= NANDA 診断ラベル + OP/TP/EP
+  - 訪問看護でのNANDA普及1割。カイポケ運用が現場慣習
+  - 推奨：カイポケ互換+OP/TP/EP+NANDA任意項目のハイブリッド
+- Phase D 着手時の選択肢：
+  1. master 上で `feat/nursing-care-plan-v2` を新規作成（フレッシュスタート）
+  2. `feat/nursing-care-plan` を master に rebase で conflict 解消（route.ts/run.ts conflict 確認済み）
+- どちらを取るかは Phase D 着手時に再判断（Phase B 改修込みの大幅改修になるため、フレッシュスタートが筋が良い可能性大）
+
+### 実運用フィードバック収集（最優先）
+SOAP Phase B が master 反映済み。明日から実運用で数日試して以下を収集：
+1. AI出力に「追記」「修正」した箇所をメモ（どんな情報が抜けたか、どんな表現が不自然か）
+2. まだ補正されない音声誤変換パターン
+3. 事業所特有の言い回し・方言への対応度
+4. 他スタッフに試してもらった時の反応（書き癖の違い耐性）
+
+フィードバック内容に応じて次の手を決定：
+- 誤変換パターン追加 → systemPrompt の補正ルール追記
+- 特定疾患・職種で弱い → Few-shot追加（PT・精神科・小児など）
+- コストが気になる → Prompt Caching 導入（複数スタッフ集中利用パターンが見えた段階）
+- さらに精度欲しい → Sonnet昇格 or 2段階生成
+
+テスト実行：
+```bash
+# 全ケース計測 + スナップショット保存
+OUTPUT_JSON=tests/prompts/soap/post-XXX-YYYY-MM-DD.json npx tsx tests/prompts/soap/run.ts soap all
+
+# baseline と diff
+npx tsx tests/prompts/soap/diff-snapshot.ts tests/prompts/soap/baseline-2026-04-27.json tests/prompts/soap/post-XXX-YYYY-MM-DD.json
+
+# 9ケース合格判定
+npx tsx tests/prompts/soap/quality-gate.ts tests/prompts/soap/post-XXX-YYYY-MM-DD.json
+```
+
+---
+
+## 引き継ぎ（過去分: 2026-04-16）
 
 ### 完了
 - Supabase: Google認証 + RLS + SQLマイグレーション
