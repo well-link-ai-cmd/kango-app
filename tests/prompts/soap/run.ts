@@ -7,6 +7,14 @@
  *   ANTHROPIC_API_KEY=xxx npx tsx tests/prompts/soap/run.ts questions all
  *   ANTHROPIC_API_KEY=xxx npx tsx tests/prompts/soap/run.ts all all
  *
+ *   # SOAP のモデル並走（H→S 順、ケースごと）
+ *   MODEL=both npx tsx tests/prompts/soap/run.ts soap all
+ *   MODEL=sonnet npx tsx tests/prompts/soap/run.ts soap all
+ *
+ *   # baseline スナップショット保存（A2 用）
+ *   OUTPUT_JSON=tests/prompts/soap/baseline-2026-04-27.json \
+ *     npx tsx tests/prompts/soap/run.ts soap all
+ *
  * .env.local に ANTHROPIC_API_KEY があれば自動で読み込むので上記プレフィックス不要。
  *
  * NOTE: プロンプト組み立てロジックは app/api/soap/route.ts と
@@ -14,11 +22,22 @@
  *       ルート側を変更したらここも同期すること。
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateAiResponse } from "../../../lib/ai-client";
 import { SOAP_FEWSHOT_EXAMPLES } from "../../../lib/soap-fewshot";
+
+type ModelKey = "haiku" | "sonnet";
+type ModelMode = "haiku" | "sonnet" | "both";
+
+function sha256Hex(input: string): string {
+  return crypto.createHash("sha256").update(input, "utf-8").digest("hex");
+}
+function shortHash(input: string): string {
+  return sha256Hex(input).slice(0, 8);
+}
 
 // -------- .env.local 簡易ローダー（dotenv 依存を避けるため自前） --------
 function loadDotenv(filePath: string): void {
@@ -73,7 +92,7 @@ function buildSoapRequest(input: CaseInput) {
   const allPrevRecords = [...(previousRecords ?? []), ...(initialSoapRecords ?? [])].slice(0, 3);
 
   const alertAnswersSection = alertAnswers && alertAnswers.length > 0
-    ? "\n【前回からの継続確認事項への回答（今回の事実として必ずSOAPに反映）】\n" +
+    ? "\n【前回からの継続確認事項への回答（今回の事実として必ず O/A/P に反映。S 欄には入れない）】\n" +
       alertAnswers
         .filter((qa) => qa.answer.trim())
         .map((qa) => `継続確認: ${qa.question}\n回答: ${qa.answer}`)
@@ -81,7 +100,7 @@ function buildSoapRequest(input: CaseInput) {
     : "";
 
   const answersSection = questionAnswers && questionAnswers.length > 0
-    ? "\n【AIからの確認質問への回答（今回の事実として必ずSOAPに反映）】\n" +
+    ? "\n【AIからの確認質問への回答（今回の事実として必ず O/A/P に反映。S 欄には入れない）】\n" +
       questionAnswers
         .filter((qa) => qa.answer.trim())
         .map((qa) => `Q: ${qa.question}\nA: ${qa.answer}`)
@@ -90,77 +109,78 @@ function buildSoapRequest(input: CaseInput) {
 
   const hasSInput = sInput?.trim();
 
+  // Phase B 改修（2026-04-27）: route.ts と同期。promptHash 不整合防止のため必ず route.ts と同じ内容を保つ。
   const systemPrompt = `あなたは訪問看護記録のSOAP作成AIである。看護師の話し言葉メモをSOAP形式に変換する。
 
-# 事実ソース（各項目の「出力材料」と「判断材料」の区別が重要）
-- 【看護計画書（確定版）】（提供されている場合）：**最優先のコンテキスト**。目標・療養上の課題を A・P の判断材料として必ず考慮する
-- 【今回の訪問メモ】：O への直接記載、および A・P の判断材料
-- 【S情報】（提供されている場合）：S への passthrough、および A・P の判断材料（本人の訴え・感情・要望として臨床判断に必ず反映）
-- 【AIからの確認質問への回答】（提供されている場合）：O への直接記載、および A・P の判断材料
-- 【前回からの継続確認事項への回答】（提供されている場合）：O への直接記載、および A・P の判断材料
-- 【過去記録】：文体・継続事項の参考。A では前回からの変化を、P では継続/変更の判断材料として使う
-- 【ケアプラン・担当者会議の方針（旧欄・過渡期参照）】（提供されている場合）：看護計画書が未作成の場合のみ補助参照
+# 特に重要（最優先で守る3項目）
+1. 事実ソースにない情報を推測で創作しない。記載がなければ「未評価」等で残す
+2. 過去記録は文体（文末・文の長さ）の手本。医療用語の正誤は補正リスト優先。過去記録に「複雑音」「常用」とあっても、補正リストに従い「副雑音」「上葉」と書く
+3. 音声誤変換は extracted_facts の段階から補正する（出力段階で直すのでは遅い）
 
-参照優先順位：看護計画書（確定版） > 過去記録・メモ > 旧ケアプラン欄（フォールバック）
+# 事実ソース（出力材料 / 判断材料の区別）
+- 【看護計画書（確定版）】：最優先コンテキスト。目標・課題は A・P の判断材料
+- 【今回の訪問メモ】：O への直接記載、A・P の判断材料
+- 【S情報】：S への passthrough、A・P の判断材料（本人の訴えとして臨床判断に反映。例「痛みが増した」→ A で疼痛増悪評価、P でレスキュー検討）
+- 【AIからの確認質問への回答】【前回からの継続確認事項への回答】：メモの記載漏れを補う事実。空欄でなければ O/A/P に反映する（S 欄には入れない）
+- 【過去記録】：文体・継続事項の参考。A では前回からの変化、P では継続/変更の判断材料
+- 【ケアプラン（旧欄）】：看護計画書がない場合のみ補助参照
 
-特に重要：
-- AI確認質問・継続確認への回答は「メモに記載漏れがあった事実を看護師が後から補足したもの」である。空欄でなければ必ず O/A/P の適切な箇所に反映すること。回答を無視してはならない
-- 【S情報】は S にそのまま反映するだけでなく、A・P の作成時にも「本人の主観」として必ず考慮する。例：S情報に「痛みが増してきた」とあれば A で疼痛増悪を評価し、P でレスキュー使用や主治医相談を検討する
+参照優先順位：看護計画書（確定版） > 過去記録・メモ > 旧ケアプラン欄
 
 # S（主観情報）出力欄の厳格ルール
-Sの出力欄そのものは看護師の明示入力のみで構成する（UIに専用入力欄がある）：
-1. 【S情報】が提供されている場合：その内容をそのまま S に反映する。医療用語の誤変換のみ補正する。言い換え・要約・編集は一切しない
-2. 【S情報】が提供されていない（空・未指定）場合：Sは空文字列 "" にする。訪問メモの発言らしき表現、過去記録のS、家族発言など、どのソースからも S 欄への文章生成はしない
+S 欄は専用UI入力欄（看護師の明示入力）のみで構成する：
+1. 【S情報】が提供されている場合：そのまま S に反映する（誤変換補正のみ。言い換え・要約・編集はしない）
+2. 【S情報】がない場合：S は必ず空文字列 ""。以下のいずれからも S 欄を作ってはならない：
+   - 訪問メモの「〜と言った」「〜と発言」「『…』」等の引用や本人発言らしき表現
+   - メモ中の家族・関係者の発言
+   - 過去記録の S 欄
+   - 【AIからの確認質問への回答】【前回からの継続確認事項への回答】の本文（これらは O/A/P 専用）
+   - 「特になし」「変わりなし」等のプレースホルダ
+※ S情報を A/P の判断材料に使うことは妨げない
 
-禁止事項（S出力欄に関して）：
-- 訪問メモの「〜と言った」「〜と発言」等から S 欄の文章を作らない
-- 過去記録の S を今回のS欄に流用しない
-- メモ中の家族発言を S 欄に入れない
-- 「特になし」「変わりなし」等のプレースホルダを勝手に埋めない
+# 作業手順
+1. extracted_facts：全事実ソースから事実を抽出する。1事実=1要素で配列に入れる（複数事実を1要素に詰めない）。各要素の末尾に由来タグを付ける：[メモ] / [S情報] / [AI回答] / [継続確認回答]
+2. coverage_check：各事実を S/O/A/P のどこに反映するかを確認する。[AI回答] [継続確認回答] タグの項目が本文に含まれているかを厳しくチェック
+3. S・O・A・P：coverage_check に従って記述。extracted_facts の事実を全て反映する
 
-※ただし上記は S 出力欄への記載ルールであり、【S情報】の内容を A/P の判断で使うこと自体は歓迎される
+# 文体ルール
+- 過去記録があれば、文末表現・文の長さに合わせる（語尾「〜みられる」「〜である」、短文/長文）
+- 過去記録がない場合は「〜みられる」「〜である」調の標準的な看護記録文体
+- 見出し・箇条書き・番号リストは使わない。自然な文章で書く
+- 事実ソースにない事実を創作しない
+- 過去記録の医療用語の表記が補正リストの誤変換と一致する場合は、補正後の用語で書く（過去記録に揃えない）
 
-# 作業手順（必ず順番に実行）
-1. extracted_facts：上記の全事実ソースから事実を1つ残らず抽出する（発言・観察・処置・時刻マーカー・次回予定など）。各事実の末尾に由来タグを付ける：[メモ] / [S情報] / [AI回答] / [継続確認回答]
-2. coverage_check：抽出した各事実を S/O/A/P のどこに反映するかを1行ずつ確認する。[AI回答] [継続確認回答] タグの項目が SOAP 本文に含まれているかを特に厳しくチェックする
-3. S・O・A・P：coverage_checkに従って記述する。extracted_factsにある事実は全て反映する
-
-# 文体ルール（必ず守ること）
-- 過去記録が提供されている場合、その文末表現・文の長さ・用語の書き方に合わせる
-  - 過去記録が「〜みられる」なら「〜みられる」、「〜である」なら「〜である」を使う
-  - 過去記録が短文なら短文、長文なら長文にする
-- 過去記録がない場合は「〜みられる」「〜である」調の標準的な看護記録文体で書く
-- 見出し（【】）・箇条書き（・や-）・番号リストは使わない。自然な文章で書く
-- 事実ソース（メモ・S情報・各種回答）にない事実を創作しない
-
-# 医療用語の補正（全段階で必ず実行）
-音声入力では同音異義語の誤変換が頻発する。extracted_facts の抽出段階・coverage_check・最終 S/O/A/P の全段階で、文脈から正しい医療用語に直すこと。extracted_facts にも補正済みの用語で書く（例：「配便は昨日あり」ではなく「排便は昨日あり」と抽出する）。
+# 医療用語の補正（全段階で実行）
+音声入力では同音異義語の誤変換が頻発する。extracted_facts の段階から補正済みの用語で書く（例「配便は昨日あり」→「排便は昨日あり」）。
 よくある誤変換：
-- 朝蠕動音→腸蠕動音、超蠕動音→腸蠕動音（「ちょう」は「腸」）
-- けつあつ→血圧、じょくそう→褥瘡、さんそ→酸素
+- 朝蠕動音/超蠕動音→腸蠕動音、けつあつ→血圧、じょくそう→褥瘡、さんそ→酸素
 - ばいたる→バイタル、えすぴーおーつー→SpO2
-- 服部→腹部、配便→排便、官庁→浣腸、感聴→浣腸
-- 円下→嚥下、角痰→喀痰、不種→浮腫、付種→浮腫
-- 辱層→褥瘡、関節痛→間接的ではなく関節の痛み
-- 複雑音→副雑音（呼吸音の「ふくざつおん」は必ず「副雑音」）
-- 緊満感は必ず「緊満感」（緊張感・近満感・筋満感などは誤り。腹部・乳房の張りを指す）
-- 「こうい」は衣服の着替え文脈では必ず「更衣」（行為・好意・合意などは誤り）
-- 「せんぱつ」は必ず「洗髪」（先発・선발などは誤り）
-- 「ちょめい」「ちょうめい」は医療文脈では必ず「著明」（著名・調名などは誤り。例：著明な浮腫、著明な改善）
+- 服部→腹部、配便→排便、官庁/感聴→浣腸、円下→嚥下、角痰→喀痰
+- 不種/付種→浮腫、辱層→褥瘡、胎動→体動（呼吸・体位文脈）
+- 〜の正常→〜の性状（便・創部・分泌物等の文脈）
+- 侵入部→刺入部（点滴・カテーテル文脈）
+- 外装→咳嗽（呼吸器症状文脈）
+- 常用→上葉（呼吸器・肺野文脈。中葉・下葉も同音漢字から補正）
+- 複雑音/服雑音→副雑音（呼吸音の「ふくざつおん」）
+- 緊満感は必ず「緊満感」（緊張感・近満感・筋満感は誤り。腹部・乳房の張り）
+- 「こうい」は衣服の着替え文脈では「更衣」
+- 「せんぱつ」は「洗髪」
+- 「ちょめい/ちょうめい」は医療文脈では「著明」（著明な浮腫・著明な改善）
+- 関節痛は「関節の痛み」
 - 医療文脈で意味が通らない漢字は、同音の医療用語に置き換える
 
 # 各項目の書き方
-S：【S情報】が提供されていればその内容をそのまま（誤変換補正のみ）。【S情報】がなければ空文字列 ""。訪問メモや過去記録からは絶対に引き出さない
-O：場面描写から始め、時系列で書く。バイタル・処置・観察所見を具体的に。AI回答・継続確認回答の客観情報もここに入れる。次回訪問予定があれば末尾に書く。
-A：所見から直接書き始め→臨床判断で締める。「〜に関しては」等の前置き不要。前回からの変化を含める。
-P：今後のケア方針を3〜5文で書く。「〜していく」「〜を継続する」で統一。
+S：【S情報】があればそのまま（誤変換補正のみ）。なければ ""。訪問メモ・過去記録から引き出さない
+O：場面描写から始め時系列で。バイタル・処置・観察所見を具体的に。AI回答・継続確認回答の客観情報もここに。次回訪問予定は末尾
+A：所見から直接書き始め、前回からの変化を含め、臨床判断で締める。前置き不要
+P：今後のケア方針を3〜5文。「〜していく」「〜を継続する」で統一
 
-# 出力長さの原則
-入力メモの情報量に見合った長さで出力する。入力が短ければ出力も短く、入力が詳細なら出力も詳細に。下記Few-shot例のAfterが長文なのは、元のBeforeが豊富な情報を含んでいたためであり、長さを真似する必要はない。
+# 出力長さ
+入力メモの情報量に見合った長さで出力する。下記Few-shot例の長さに引きずられない（Beforeが豊富だったので長文になっただけ）。
 ${SOAP_FEWSHOT_EXAMPLES}`;
 
   const prevStyleSection = allPrevRecords.length > 0
-    ? "【文体の手本（この記録と同じ文末表現・文の長さ・用語で書くこと）】\n" +
+    ? "【文体の手本（文末表現・文の長さを揃える。ただし医療用語の表記は補正リスト優先）】\n" +
       allPrevRecords.map((r, i) =>
         `[${i === 0 ? "前回" : i === 1 ? "前々回" : "3回前"}${r.visitDate ? `（${r.visitDate}）` : ""}]\nS: ${r.S}\nO: ${r.O}\nA: ${r.A}\nP: ${r.P}`
       ).join("\n\n") + "\n\n"
@@ -181,18 +201,18 @@ ${rawInput}`;
 
   const soapTool = {
     name: "output_soap",
-    description: "訪問看護記録をSOAP形式で出力する。必ず extracted_facts → coverage_check → S/O/A/P の順で全項目を埋めること。",
+    description: "訪問看護のSOAP記録を構造化して返す。",
     input_schema: {
       type: "object" as const,
       properties: {
         extracted_facts: {
           type: "array",
           items: { type: "string" },
-          description: "事実ソース（今回の訪問メモ・S情報・AI確認質問への回答・継続確認への回答）から抽出した全事実を箇条書きで列挙。各項目の末尾に由来タグ [メモ] / [S情報] / [AI回答] / [継続確認回答] を付ける。内部確認用。",
+          description: "事実の箇条書き。1事実1要素。各要素末尾に由来タグ [メモ]/[S情報]/[AI回答]/[継続確認回答] を付ける",
         },
         coverage_check: {
           type: "string",
-          description: "extracted_facts の各項目を S/O/A/P のどこに反映したかを1行ずつ列挙。[AI回答] [継続確認回答] タグの項目が必ず SOAP 本文に含まれているかを厳しくチェックする。内部確認用。",
+          description: "各事実の反映先メモ（S/O/A/P のどこに入れたか）",
         },
         S: { type: "string" },
         O: { type: "string" },
@@ -305,41 +325,95 @@ function printSection(label: string, body: unknown) {
   else console.log(JSON.stringify(body, null, 2));
 }
 
-async function runSoap(tc: TestCase) {
-  printHeader(`[SOAP] ${tc.id}: ${tc.description}`);
-  printSection("入力メモ", tc.input.rawInput);
+interface SoapToolOutput {
+  extracted_facts?: string[];
+  coverage_check?: string;
+  S: string;
+  O: string;
+  A: string;
+  P: string;
+}
+interface SoapRunResult {
+  model: ModelKey;
+  toolInput: SoapToolOutput | null;
+  rawText: string;
+  elapsedMs: number;
+  usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number };
+  outputChars: { extracted_facts: number; coverage_check: number; S: number; O: number; A: number; P: number };
+}
 
-  const { prompt, systemPrompt, soapTool } = buildSoapRequest(tc.input);
+function computeOutputChars(r: SoapToolOutput | null): SoapRunResult["outputChars"] {
+  if (!r) return { extracted_facts: 0, coverage_check: 0, S: 0, O: 0, A: 0, P: 0 };
+  return {
+    extracted_facts: (r.extracted_facts ?? []).reduce((sum, s) => sum + s.length, 0),
+    coverage_check: (r.coverage_check ?? "").length,
+    S: (r.S ?? "").length,
+    O: (r.O ?? "").length,
+    A: (r.A ?? "").length,
+    P: (r.P ?? "").length,
+  };
+}
+
+async function callSoapOnce(
+  prompt: string,
+  systemPrompt: string,
+  soapTool: ReturnType<typeof buildSoapRequest>["soapTool"],
+  model: ModelKey
+): Promise<SoapRunResult> {
   const started = Date.now();
   const response = await generateAiResponse(prompt, systemPrompt, {
     temperature: 0.2,
     tool: soapTool,
     maxTokens: 6144,
+    model,
   });
-  const elapsed = Date.now() - started;
-
-  if (!response.toolInput) {
-    console.log("\n❌ tool_use が返ってこなかった");
-    console.log("text:", response.text);
-    return;
-  }
-  const r = response.toolInput as {
-    extracted_facts?: string[];
-    coverage_check?: string;
-    S: string;
-    O: string;
-    A: string;
-    P: string;
+  const elapsedMs = Date.now() - started;
+  const toolInput = (response.toolInput as SoapToolOutput | undefined) ?? null;
+  return {
+    model,
+    toolInput,
+    rawText: response.text,
+    elapsedMs,
+    usage: response.usage ?? { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    outputChars: computeOutputChars(toolInput),
   };
+}
 
-  printSection("抽出（内部）", r.extracted_facts ?? []);
-  printSection("反映チェック（内部）", r.coverage_check ?? "");
-  printSection("S", r.S);
-  printSection("O", r.O);
-  printSection("A", r.A);
-  printSection("P", r.P);
+function printSoapResult(result: SoapRunResult) {
+  const tag = `[${result.model}]`;
+  if (!result.toolInput) {
+    console.log(`\n${tag} ❌ tool_use が返ってこなかった`);
+    console.log(`${tag} text:`, result.rawText);
+  } else {
+    const r = result.toolInput;
+    printSection(`${tag} 抽出（内部）`, r.extracted_facts ?? []);
+    printSection(`${tag} 反映チェック（内部）`, r.coverage_check ?? "");
+    printSection(`${tag} S`, r.S);
+    printSection(`${tag} O`, r.O);
+    printSection(`${tag} A`, r.A);
+    printSection(`${tag} P`, r.P);
+  }
+  const u = result.usage;
+  console.log(
+    `\n${tag} tokens: in=${u.input_tokens} out=${u.output_tokens} (cache_read=${u.cache_read_input_tokens}) | ${result.elapsedMs}ms`
+  );
+}
+
+async function runSoap(tc: TestCase, modelMode: ModelMode): Promise<SoapRunResult[]> {
+  printHeader(`[SOAP] ${tc.id}: ${tc.description}`);
+  printSection("入力メモ", tc.input.rawInput);
+
+  const { prompt, systemPrompt, soapTool } = buildSoapRequest(tc.input);
+  const models: ModelKey[] = modelMode === "both" ? ["haiku", "sonnet"] : [modelMode];
+
+  const results: SoapRunResult[] = [];
+  for (const model of models) {
+    const result = await callSoapOnce(prompt, systemPrompt, soapTool, model);
+    printSoapResult(result);
+    results.push(result);
+  }
   if (tc.expectations?.soap) printSection("期待する挙動", tc.expectations.soap);
-  console.log(`\n(${elapsed}ms)`);
+  return results;
 }
 
 async function runQuestions(tc: TestCase) {
@@ -400,8 +474,25 @@ async function main() {
   const mode = (process.argv[2] ?? "all").toLowerCase(); // soap | questions | all
   const caseFilter = process.argv[3] ?? "all";           // case-id | all
 
+  // 環境変数: MODEL=haiku(既定) | sonnet | both （SOAPモードでのみ使用）
+  const rawModel = (process.env.MODEL ?? "haiku").toLowerCase();
+  if (!["haiku", "sonnet", "both"].includes(rawModel)) {
+    console.error(`MODEL は haiku | sonnet | both のいずれか。受け取った値: ${rawModel}`);
+    process.exit(1);
+  }
+  const modelMode = rawModel as ModelMode;
+
+  // 環境変数: OUTPUT_JSON=<path> 指定時、SOAP の結果を JSON で保存（A2 baseline 用）
+  const outputJsonRel = process.env.OUTPUT_JSON;
+  const outputJsonPath = outputJsonRel
+    ? path.isAbsolute(outputJsonRel)
+      ? outputJsonRel
+      : path.join(projectRoot, outputJsonRel)
+    : null;
+
   const casesPath = path.join(__dirname, "cases.json");
-  const allCases = JSON.parse(fs.readFileSync(casesPath, "utf-8")) as TestCase[];
+  const casesRaw = fs.readFileSync(casesPath, "utf-8");
+  const allCases = JSON.parse(casesRaw) as TestCase[];
   const cases = caseFilter === "all" ? allCases : allCases.filter((c) => c.id === caseFilter);
 
   if (cases.length === 0) {
@@ -409,9 +500,69 @@ async function main() {
     process.exit(1);
   }
 
+  // プロンプトメタを計測（プロンプト本体は入力依存で揺れるため、systemPrompt + tool スキーマでハッシュを取る）
+  const sample = buildSoapRequest(cases[0].input);
+  const toolDescStr = JSON.stringify(sample.soapTool);
+  const promptHash = shortHash(sample.systemPrompt + " " + toolDescStr);
+  const promptMeta = {
+    systemPromptChars: sample.systemPrompt.length,
+    toolDescChars: toolDescStr.length,
+    fewshotChars: SOAP_FEWSHOT_EXAMPLES.length,
+  };
+  const casesFileHash = shortHash(casesRaw);
+
+  if (mode === "soap" || mode === "all") {
+    console.log(`\nMODEL=${modelMode} | promptHash=${promptHash} | casesFileHash=${casesFileHash}`);
+    console.log(`promptMeta: systemPromptChars=${promptMeta.systemPromptChars} toolDescChars=${promptMeta.toolDescChars} fewshotChars=${promptMeta.fewshotChars}`);
+  }
+
+  const soapJsonCases: Array<{
+    id: string;
+    description: string;
+    runs: Array<{
+      model: ModelKey;
+      soap: SoapToolOutput | null;
+      rawText: string;
+      elapsedMs: number;
+      usage: SoapRunResult["usage"];
+      outputChars: SoapRunResult["outputChars"];
+    }>;
+  }> = [];
+
   for (const tc of cases) {
-    if (mode === "soap" || mode === "all") await runSoap(tc);
+    if (mode === "soap" || mode === "all") {
+      const results = await runSoap(tc, modelMode);
+      if (outputJsonPath) {
+        soapJsonCases.push({
+          id: tc.id,
+          description: tc.description,
+          runs: results.map((r) => ({
+            model: r.model,
+            soap: r.toolInput,
+            rawText: r.toolInput ? "" : r.rawText,
+            elapsedMs: r.elapsedMs,
+            usage: r.usage,
+            outputChars: r.outputChars,
+          })),
+        });
+      }
+    }
     if (mode === "questions" || mode === "all") await runQuestions(tc);
+  }
+
+  if (outputJsonPath && (mode === "soap" || mode === "all")) {
+    const snapshot = {
+      ranAt: new Date().toISOString(),
+      modelMode,
+      promptHash,
+      promptMeta,
+      casesFileHash,
+      caseFilter,
+      cases: soapJsonCases,
+    };
+    fs.mkdirSync(path.dirname(outputJsonPath), { recursive: true });
+    fs.writeFileSync(outputJsonPath, JSON.stringify(snapshot, null, 2), "utf-8");
+    console.log(`\nスナップショット保存: ${outputJsonPath}`);
   }
 }
 
