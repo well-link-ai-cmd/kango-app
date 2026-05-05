@@ -1,137 +1,93 @@
 # kango-app — AI訪問看護記録アシスト
 
-## 引き継ぎ（最終更新: 2026-04-27 Phase B v3 採用、push判断待ち）
+## 引き継ぎ（最終更新: 2026-05-05 看護計画書 Phase 8 完了・master投入準備中）
 
-### 🔄 進行中: SOAPプロンプト Phase B 改修（v3 採用・未コミット・未push）
+### 完了（2026-05-05 — 看護計画書 Phase 8）
 
-**ブランチ**: `feat/nursing-care-plan`（既存PRのまま、SOAP改修分が乗っている）
+#### NANDA形式の2段階AI生成・議事録対応・統合textareaUI
+- migration 007: `issue_format` ('nanda'|'freeform') カラム追加、`conference_memo` カラム追加（Supabase本番実行済）
+- storage.ts: `NursingCarePlanIssue` を Discriminated Union 化（NANDA / freeform）
+  - メタ情報（aiGenerated/aiModel/imported/importedAt）追加
+  - `issueToBodyText` / `parseBodyText` ヘルパー（OP/TP/EP整形と自由テキスト→構造化のパース）
+- 新規API `/nursing-care-plan/suggest-labels`（Sonnet 4.6）：
+  議事録+直近1ヶ月SOAP+active_planから課題ラベル候補MAX5提示・rationale必須・継続課題判定
+- 新規API `/nursing-care-plan/generate-issues`（Sonnet 4.6）：
+  選択ラベル群→OP/TP/EP+統合nursing_goal一括生成・既実施ケアと重複許容明記
+- 既存 `/nursing-care-plan/generate` `/evaluate` を Sonnet 4.6 昇格（v1.1.0）
+- `app/api/soap/route.ts` `questions/route.ts`: 看護計画書 issues 注入を NANDA/freeform 両対応（NANDA時は OP/TP/EP 構造化注入）
+- NursingCarePlanForm.tsx UI 改修：
+  - 課題の記述形式（NANDA/freeform）切替
+  - 議事録入力（任意・推奨）
+  - NANDAフロー Step 1（候補提示）→ Step 2（一括生成）の2段階UI
+  - 課題1件は「ラベル(input) + 内容(大textarea)」の統合UI（カイポケコピペしやすさ優先）
+  - 編集中は parseBodyText で構造化保存、表示は issueToBodyText で整形
+  - コピペ取り込み（AI整形なし、imported メタ付き freeform issue）
+- preview E2E 動作確認済（NANDAフロー / コピペ / 評価 / 保存）
 
-**Phase A〜B で実施済み（全部 working tree のみ。commit していない）**:
-- A1: `lib/ai-client.ts` に `model` / `usage` パラメータ追加（Haiku/Sonnet 切替）
-- A1: `tests/prompts/soap/run.ts` に MODEL/OUTPUT_JSON 対応 + promptHash/promptMeta/casesFileHash/outputChars 記録
-- A1: `tests/prompts/soap/README.md` に並走モード・baseline手順を追記
-- A2: `tests/prompts/soap/baseline-2026-04-27.json` 保存（promptHash=593f9cb0、Haiku 7ケース）
+#### Phase 8 完了状態
+- ブランチ: `feat/nursing-care-plan`（PR #6 draft 状態のまま）
+- 直近 commit: 7fb29df（NANDA UI統合textarea）
+- 残タスク: master マージ準備中（このセッションで rebase/merge）
+
+### 完了（2026-04-27）
+
+#### SOAP プロンプト Phase B 改修（master マージ済・PR #7）
 - B1: tool description 簡素化（663→473char、-28.7%）
-- B2: 強調語整理（最重要3項目に集中：推測禁止／補正リスト優先／全段階補正）
-- B3: 冗長表現精査（systemPromptChars 10838→10234、-5.6%）
-- B4: extracted_facts 1事実=1要素を明記
-- 誤変換リスト追加: 胎動→体動／〜の正常→〜の性状／侵入部→刺入部／外装→咳嗽／常用→上葉／服雑音→副雑音
-- 過去記録 vs 補正リスト優先順位を文体ルールに明記（過去記録に汚染データがあっても補正後の用語で書く）
-- `tests/prompts/soap/cases.json` に 2ケース追加（case-03b/case-03c、計9ケース）
-- post-B 計測: `tests/prompts/soap/post-phase-b-2026-04-27.json` 保存（promptHash=514643d7）
-- 集計ツール: `summarize-baseline.ts` / `diff-snapshot.ts` / `show-review.ts` 追加
-- `~/.claude/rules/ai-guardrails.md` 誤変換リスト＋過去記録優先順位を追記
-- `~/.claude/rules/ai-record-tools-design.md` 落とし穴11「過去記録の誤変換引きずり」を追記
-- `tests/prompts/soap/CHANGELOG.md` 新規作成（改修履歴）
+- B2: 強調語整理。最優先3項目に集中（推測禁止／補正リスト優先／全段階補正）
+- B3: 冗長表現精査（systemPromptChars 10838→10432）
+- B4: extracted_facts「1事実=1要素」を明記
+- 誤変換リスト追加6パターン：胎動→体動／〜の正常→〜の性状／侵入部→刺入部／外装→咳嗽／常用→上葉／服雑音→副雑音
+- 過去記録の医療用語が補正リストの誤変換と一致したら補正後の用語で書く（過去記録に揃えない）
+- alertAnswers/answers ラベルを「O/A/P に反映。S 欄には入れない」に明確化
+- ai-client.ts に model（haiku/sonnet）/usage パラメータ追加
+- cases.json 拡張（case-03b/case-03c）9ケース化
+- テストハーネス整備：summarize-baseline / diff-snapshot / compare-s / show-review / show-case06-v3 / quality-gate
+- 計測：1ケース ¥2.65→¥2.42（-8.73%）。9ケース全合格。promptHash 593f9cb0→96040783
+- preview実環境で全要件クリア確認済み（誤変換補正・過去記録優先・S=空・[AI回答]反映・S情報passthrough）
 
-**計測結果（baseline 7ケース vs post-B v3 共通7ケース）**:
-- input_tokens 合計 -5,688 / output_tokens 合計 -950
-- コスト ¥18.53 → ¥16.91（-8.73%）
-- 1ケース平均 ¥2.65 → ¥2.42
-- promptHash 593f9cb0 → 96040783（変更検知 ✅）
+### 進行中タスク（次回再開時）
 
-**v3 で追加した修正（B案：S=""死守）**:
-- alertAnswersSection / answersSection のラベルを「必ず O/A/P に反映。S 欄には入れない」に変更
-- S 厳格ルールに「[AI回答][継続確認回答] の本文は S に入れない」を追加
+#### 看護計画書feature（Phase D 着手待機中）
+- ブランチ: `feat/nursing-care-plan`（PR #6 draft 化）
+- 現状コードはカイポケフォーマット非互換（`#1 (観察)(ケア)(指導)` の構造化なし、issue が単一文字列）
+- ユーザー要望：旧carePlan欄の内容を新規計画書にそのまま引き継げる導線、カイポケフォーマット踏襲
+- リサーチ結果（memory/project_kango_nanda.md）：
+  - ユーザー言及の「#1 (観察)(ケア)(指導)」= NANDA 診断ラベル + OP/TP/EP
+  - 訪問看護でのNANDA普及1割。カイポケ運用が現場慣習
+  - 推奨：カイポケ互換+OP/TP/EP+NANDA任意項目のハイブリッド
+- Phase D 着手時の選択肢：
+  1. master 上で `feat/nursing-care-plan-v2` を新規作成（フレッシュスタート）
+  2. `feat/nursing-care-plan` を master に rebase で conflict 解消（route.ts/run.ts conflict 確認済み）
+- どちらを取るかは Phase D 着手時に再判断（Phase B 改修込みの大幅改修になるため、フレッシュスタートが筋が良い可能性大）
 
-**最終レビュー結果（v3 全ケース合格）**:
-- ✅ case-01：S=「膝は昨日より楽になった」（baseline と同じ既存挙動。Phase B 未解決の残課題）
-- ✅ case-02 / case-03 / case-04 / case-05：S=空、回帰なし
-- ✅ case-03b（新6パターン）：胎動→体動／〜の性状／刺入部／咳嗽／上葉／副雑音 全て補正
-- ✅ case-03c（過去記録汚染）：出力に「常用/複雑音/辱層/著名」が引きずられず「上葉/副雑音/褥瘡/著明」に揃った
-- ✅ **case-06（[AI回答]反映）**：S=空 を v3 で達成。A/P で AI回答全反映（NRS2/レスキュー/ショートステイ）
-- ✅ case-07（S情報→A/P連動）：S passthrough OK、A で疼痛増悪・睡眠障害、P で疼痛管理見直し（baselineより改善）
+### 実運用フィードバック収集（最優先）
+SOAP Phase B が master 反映済み。明日から実運用で数日試して以下を収集：
+1. AI出力に「追記」「修正」した箇所をメモ（どんな情報が抜けたか、どんな表現が不自然か）
+2. まだ補正されない音声誤変換パターン
+3. 事業所特有の言い回し・方言への対応度
+4. 他スタッフに試してもらった時の反応（書き癖の違い耐性）
 
-### 🔁 ターミナル再開時にやること
+フィードバック内容に応じて次の手を決定：
+- 誤変換パターン追加 → systemPrompt の補正ルール追記
+- 特定疾患・職種で弱い → Few-shot追加（PT・精神科・小児など）
+- コストが気になる → Prompt Caching 導入（複数スタッフ集中利用パターンが見えた段階）
+- さらに精度欲しい → Sonnet昇格 or 2段階生成
 
-1. **master push 判断** — v3 で全合格、commit メッセージ案を出して push するか
-2. Phase C（Few-shot 拡充：慢性疾患安定期＋sInputあり）に進むか、実運用フィードバック先行か
-3. case-01 の S 既存挙動（メモ本人発言が S に入る）の対応を Phase D として将来やるか保留
-
-### 続きを始める方法
-
-別端末でも同じ場所から再開できるよう、`feat/nursing-care-plan` ブランチに**まだ commit していない**ので注意。
-ターミナル再起動後の最初のコマンド推奨：
-
+テスト実行：
 ```bash
-cd C:/Users/thegl/Documents/kango-app
-git status --short                                    # 未コミット変更の確認（11ファイル想定）
-npx tsx tests/prompts/soap/show-review.ts | less      # 6ケースの baseline / post-B 比較を再表示
-npx tsx tests/prompts/soap/diff-snapshot.ts \
-  tests/prompts/soap/baseline-2026-04-27.json \
-  tests/prompts/soap/post-phase-b-2026-04-27.json     # トークン削減量の再確認
+# 全ケース計測 + スナップショット保存
+OUTPUT_JSON=tests/prompts/soap/post-XXX-YYYY-MM-DD.json npx tsx tests/prompts/soap/run.ts soap all
+
+# baseline と diff
+npx tsx tests/prompts/soap/diff-snapshot.ts tests/prompts/soap/baseline-2026-04-27.json tests/prompts/soap/post-XXX-YYYY-MM-DD.json
+
+# 9ケース合格判定
+npx tsx tests/prompts/soap/quality-gate.ts tests/prompts/soap/post-XXX-YYYY-MM-DD.json
 ```
-
-Claude Code 再起動時は **「kango-app SOAP Phase B レビューの続き」** と一言投げれば、本セクションを読んで再開する。
-
-### 文字化け対策メモ（2026-04-27 の事象）
-
-長文日本語を tsx で連続出力するとき Git Bash 表示が化けることがある。
-対策：ターミナル再起動 →（必要なら）`chcp 65001 && export LANG=ja_JP.UTF-8` →`git status` で復帰確認。
-ファイル本体は UTF-8 で保存済みのため、表示崩れだけ。
 
 ---
 
-## 引き継ぎ（過去分: 2026-04-22 夜間自動進行）
-
-### 2026-04-22 完了（feat/nursing-care-plan ブランチに push、Phase 1-7 全完了）
-- **看護計画書feature Phase 1-7 すべて実装＋医療レビュー反映済み**
-  - `docs/看護計画書_手順書.md`：カイポケフォーマット準拠・責任分界（評価AI化含む）・DB設計・過渡期carePlan扱い
-  - `supabase/migrations/007_nursing_care_plans.sql`：テーブル・RLS・インデックス・トリガー（**未実行 — 朝ダッシュボードで手動実行**）
-  - `lib/storage.ts`：`NursingCarePlan` 型・CRUD・`getActiveNursingCarePlan`（確定版の最新取得）
-  - AI生成API：`nursing-care-plan/generate`（目標・課題）、`nursing-care-plan/evaluate`（期間SOAP評価）、`nursing-contents/refine`（ケア内容整理）
-  - `lib/nursing-care-plan-fewshot.ts`：プレースホルダー（**実記録ベースの例は看護師レビュー後に差し替え**）
-  - `tests/prompts/nursing-care-plan/`：cases.json 7件 + run.ts ランナー + README
-  - **SOAP / questions プロンプトの参照優先順位更新**：看護計画書（確定版） > carePlan（旧） > 推論。route.ts + run.ts ミラー同期済
-  - クライアント（records/new/page.tsx）から `patientId` を送るよう更新
-  - **看護計画書UI（Phase 5）**：一覧・新規・編集・複製ページ、共通フォームコンポーネント、AI下書きバッジ／看護師記入バッジ／安全上AI禁止バッジの3種、2モード生成（from_scratch / refine）、一括評価、カイポケコピペ、旧carePlan移行バナー
-  - **ケア内容リスト改善（Phase 7）**：複数行一括追加・インライン編集・「AIで整え直す」機能（プレビュー→承認→1回のみ元に戻す）、患者新規/編集フォームからの入力導線
-  - **medical-reviewer 品質ゲート（Phase 6）通過**：中リスク3件 + 低リスク3件の指摘を反映
-    - evaluate の finding_draft 候補から「目標達成」「中止検討」削除（看護師判定領域）
-    - 衛生材料セクションに赤系「AI下書き禁止領域」バッジ＋説明文追加
-    - refine プロンプトに「報告条件・頻度・部位限定・数値基準は削らない」制約追加
-    - 誤変換補正に関節・仰臥位追加、nursing_goal の家族支援を条件付き化、evaluate のフォールバック表現を下書き形に
-
-### AI確認質問の役割分離 + 保存ボタン保存中UI（2026-04-22 夜 push済）
-- `app/api/soap/questions/route.ts`：alerts（過去→今日の漏れ）と questions（今日のメモの曖昧点）を別ソース（gaps vs memo_ambiguities）から生成するよう再設計、トピック重複禁止を明記
-- `app/patients/[id]/records/new/page.tsx`：保存ボタンに `loadingSave` ステート、「保存中...」表示、二重送信ガード
-
-### 完了
-- Supabase: Google認証 + RLS + SQLマイグレーション
-- Vercel: masterマージ → 本番デプロイ
-- Googleログイン・患者一覧・ログアウト動作確認OK
-- **SOAP誤変換対策**：副雑音・緊満感・更衣・洗髪・著明の補正ルールをプロンプトに追加（2026-04-13 push済）
-- **Homeボタン追加**：訪問記録作成・看護内容リストのヘッダーに「患者一覧へ戻る」ボタン追加（push済）
-- **褥瘡計画書の手順書作成**：`docs/褥瘡計画書_手順書.md`（カイポケ4カテゴリ対応・B1以上ルール・DESIGN-R責任分界・DB設計含む）
-- **カイポケ報告書3様式のフォーマット把握**（通常報告書・精神科報告書・情報提供書）
-
-### 朝やってほしいこと（引き継ぎ）
-1. **手順書の責任者レビュー**：`docs/看護計画書_手順書.md` を責任者に共有
-2. **migration 007 の手動実行**：Supabase ダッシュボード > SQL Editor で `007_nursing_care_plans.sql` を実行（テーブル作成がないとSOAPプロンプトが看護計画書を参照できないだけで、本番影響はない）
-3. **feat/nursing-care-plan ブランチのPR確認**：preview環境で動作確認
-4. **Few-shot例の実記録**：看護師レビュー済みの実記録3〜5件を元に `lib/nursing-care-plan-fewshot.ts` の本文を作成
-5. **テストハーネス実行**：`npx tsx tests/prompts/nursing-care-plan/run.ts all all`（約$0.07、看護師レビュー用のサンプル出力を得る）
-
-### 残タスク
-- **Phase 5: 看護計画UI**（new/edit/copy + 患者詳細統合 + 評価UI + コピペ導線 + 移行ウィザード）— 2日、朝着手
-- **Phase 6: medical-reviewer 品質ゲート**
-- **Phase 7: ケア内容リスト改善**（複数項目一括追加、インライン編集、AIで整え直す、患者新規作成からの入力導線）
-- **carePlan UI 撤去**（Phase 5 の中で実施：新規作成フォームから削除、既存は読み取り専用、移行ボタン設置、最終的にカラム drop）
-
-### 責任者からの追加要望（2026-04-13）
-1. 月ごとのSOAP記録一括コピー機能（月別フォルダ分け）
-2. 褥瘡計画書の自動生成（**最優先**、リスクアセスメントから立てれていない課題を解決）
-3. 訪問看護報告書（通常／精神科）の月次自動生成
-4. 訪問看護情報提供書の自動生成（宛先4種：市町村/保健所長/学校/医療機関）
-5. 看護計画の半年評価・記録からの修正提案
-- 出力形式：カイポケに項目別コピペできるテキスト（PDFは後回し）
-
-### 完了（2026-04-14追加）
-- **報告書3様式のリサーチ完了**（リサーチャーエージェント再実行で成功）
-- **`docs/報告書3様式_手順書.md` 作成完了**（厚労省保医発0327第2号・2024年改定対応・Barthel/GAF/ADL詳細・4宛先書き分け・DB設計含む）
-
-### 完了（2026-04-16追加）
-- **褥瘡計画書機能 v1**（Phase 1-3 完了、本番デプロイ済）
+## 引き継ぎ（過去分: 2026-04-16）
 
 ### 完了
 - Supabase: Google認証 + RLS + SQLマイグレーション

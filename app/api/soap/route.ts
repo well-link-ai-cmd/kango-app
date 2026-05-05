@@ -92,6 +92,9 @@ export async function POST(req: NextRequest) {
   //   - 重複した指示を統合（旧「特に重要：」と「禁止事項」のブロックを削除）
   //   - 誤変換リストに音声特性の追加パターンを反映
   //   - 「過去記録の用語表記が補正リストの誤変換と一致する場合は補正後の用語で書く」を明示
+  //   - alertAnswers / answersSection ラベルを「O/A/P に反映。S 欄には入れない」に明確化
+  //   - S 厳格ルールに [AI回答][継続確認回答] 本文の S 流入禁止を追記
+  // NOTE: tests/prompts/soap/run.ts と完全同期すること。promptHash 不整合防止
   const systemPrompt = `あなたは訪問看護記録のSOAP作成AIである。看護師の話し言葉メモをSOAP形式に変換する。
 
 # 特に重要（最優先で守る3項目）
