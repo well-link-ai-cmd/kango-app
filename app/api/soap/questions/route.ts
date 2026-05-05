@@ -47,9 +47,9 @@ export async function POST(req: NextRequest) {
         .limit(1)
         .maybeSingle();
       if (plan) {
-        const issues = (plan.issues as { no: number; issue: string }[] | null) ?? [];
+        const issues = (plan.issues as Array<Record<string, unknown>> | null) ?? [];
         const issuesText = issues.length > 0
-          ? issues.map((i) => `  ${i.no}. ${i.issue}`).join("\n")
+          ? issues.map((i) => formatPlanIssue(i)).join("\n")
           : "  （なし）";
         activeNursingCarePlanSection = `【看護計画書（確定版・最優先コンテキスト、作成日 ${plan.plan_date}）】\n目標：${plan.nursing_goal ?? "（未記入）"}\n療養上の課題：\n${issuesText}\n\n`;
       }
@@ -188,4 +188,25 @@ ${rawInput}`;
     console.error(e);
     return NextResponse.json({ questions: [], alerts: [] });
   }
+}
+
+/**
+ * 看護計画書の issue（JSONB の1要素）を プロンプト注入用テキストに整形。
+ * NANDA形式と freeform形式の両対応。
+ */
+function formatPlanIssue(raw: Record<string, unknown>): string {
+  const no = raw.no ?? "?";
+  if (raw.format === "nanda") {
+    const label = (raw.diagnosis_label as string) ?? "";
+    const op = Array.isArray(raw.op) ? (raw.op as string[]) : [];
+    const tp = Array.isArray(raw.tp) ? (raw.tp as string[]) : [];
+    const ep = Array.isArray(raw.ep) ? (raw.ep as string[]) : [];
+    const lines = [`  ${no}. ${label}`];
+    if (op.length > 0) lines.push(`     OP: ${op.join(" / ")}`);
+    if (tp.length > 0) lines.push(`     TP: ${tp.join(" / ")}`);
+    if (ep.length > 0) lines.push(`     EP: ${ep.join(" / ")}`);
+    return lines.join("\n");
+  }
+  const issue = (raw.issue as string) ?? "";
+  return `  ${no}. ${issue}`;
 }
