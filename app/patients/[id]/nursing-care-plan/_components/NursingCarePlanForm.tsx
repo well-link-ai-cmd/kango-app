@@ -11,11 +11,13 @@
  *  - 👤 看護師記入必須: 計画書タイプ、タイトル、衛生材料、作成者情報
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   saveNursingCarePlan,
   issueToDisplayText,
+  issueToBodyText,
+  parseBodyText,
   type NursingCarePlan,
   type NursingCarePlanType,
   type NursingCarePlanTitle,
@@ -234,32 +236,6 @@ export default function NursingCarePlanForm({
         i === idx ? ({ ...iss, ...patch } as NursingCarePlanIssue) : iss
       )
     );
-  }
-
-  function handleUpdateNandaList(
-    idx: number,
-    field: "op" | "tp" | "ep",
-    listIdx: number,
-    value: string
-  ) {
-    const iss = issues[idx];
-    if (!iss || !isNandaIssue(iss)) return;
-    const newList = [...iss[field]];
-    newList[listIdx] = value;
-    handleUpdateNandaIssue(idx, { [field]: newList } as Partial<NursingCareIssueNanda>);
-  }
-
-  function handleAddNandaListItem(idx: number, field: "op" | "tp" | "ep") {
-    const iss = issues[idx];
-    if (!iss || !isNandaIssue(iss)) return;
-    handleUpdateNandaIssue(idx, { [field]: [...iss[field], ""] } as Partial<NursingCareIssueNanda>);
-  }
-
-  function handleRemoveNandaListItem(idx: number, field: "op" | "tp" | "ep", listIdx: number) {
-    const iss = issues[idx];
-    if (!iss || !isNandaIssue(iss)) return;
-    const newList = iss[field].filter((_, i) => i !== listIdx);
-    handleUpdateNandaIssue(idx, { [field]: newList } as Partial<NursingCareIssueNanda>);
   }
 
   function handleRemoveIssue(idx: number) {
@@ -1055,57 +1031,15 @@ export default function NursingCarePlanForm({
                 </div>
 
                 {isNandaIssue(iss) ? (
-                  // ===== NANDA形式 =====
-                  <>
-                    <div>
-                      <label className="input-label text-xs">課題ラベル</label>
-                      <input
-                        type="text"
-                        className="input-field text-sm"
-                        value={iss.diagnosisLabel}
-                        onChange={(e) => handleUpdateNandaIssue(idx, { diagnosisLabel: e.target.value })}
-                        placeholder="例：不安感増強に伴う日常生活への支障リスク"
-                      />
-                    </div>
-
-                    <NandaListEditor
-                      label="観察計画（OP）"
-                      list={iss.op}
-                      onUpdate={(li, val) => handleUpdateNandaList(idx, "op", li, val)}
-                      onAdd={() => handleAddNandaListItem(idx, "op")}
-                      onRemove={(li) => handleRemoveNandaListItem(idx, "op", li)}
-                      placeholder="例：バイタルサイン（体温・血圧・脈拍・呼吸・SpO2）を毎訪問時測定"
-                    />
-
-                    <NandaListEditor
-                      label="ケア計画（TP）"
-                      list={iss.tp}
-                      onUpdate={(li, val) => handleUpdateNandaList(idx, "tp", li, val)}
-                      onAdd={() => handleAddNandaListItem(idx, "tp")}
-                      onRemove={(li) => handleRemoveNandaListItem(idx, "tp", li)}
-                      placeholder="例：不安傾聴と共感的対応を毎訪問時5〜10分実施"
-                    />
-
-                    <NandaListEditor
-                      label="指導計画（EP）"
-                      list={iss.ep}
-                      onUpdate={(li, val) => handleUpdateNandaList(idx, "ep", li, val)}
-                      onAdd={() => handleAddNandaListItem(idx, "ep")}
-                      onRemove={(li) => handleRemoveNandaListItem(idx, "ep", li)}
-                      placeholder="例：休息の取り方と疲労時の対処法を本人・家族に説明"
-                    />
-
-                    <div className="flex items-center justify-end text-xs" style={{ color: "var(--text-muted)" }}>
-                      <button
-                        onClick={() => handleCopy(`issue-${idx}`, issueToDisplayText(iss))}
-                        className={`btn-copy ${copiedKey === `issue-${idx}` ? "btn-copy-success" : ""}`}
-                        disabled={!issueToDisplayText(iss).trim()}
-                      >
-                        <Copy size={12} />
-                        {copiedKey === `issue-${idx}` ? "コピー済！" : "課題コピー（カイポケ用）"}
-                      </button>
-                    </div>
-                  </>
+                  // ===== NANDA形式（統合textarea） =====
+                  <NandaIssueRow
+                    issue={iss}
+                    issueIdx={idx}
+                    onUpdateLabel={(label) => handleUpdateNandaIssue(idx, { diagnosisLabel: label })}
+                    onUpdateBody={(parsed) => handleUpdateNandaIssue(idx, parsed)}
+                    onCopy={(text) => handleCopy(`issue-${idx}`, text)}
+                    copiedKey={copiedKey}
+                  />
                 ) : (
                   // ===== 自由記載 =====
                   <div>
@@ -1287,67 +1221,84 @@ function UserInputBadge() {
 }
 
 /**
- * NANDA形式の OP/TP/EP リスト編集UI
- * - 各項目はテキスト1行（必要なら改行可）
- * - +追加ボタンで空行追加、×ボタンで削除
+ * NANDA形式の課題1行分の表示UI。
+ *
+ * UI: 「課題ラベル」(input) + 「課題内容」(大きいtextarea)
+ * - 内容textareaは OP/TP/EP を整形した状態で表示（カイポケ貼り付け用）
+ * - 編集中はローカル bodyText を保持し、変更があるたびに parseBodyText で OP/TP/EP に分割して親へ通知
+ * - issue.aiGeneratedAt が変わったら（AI再生成）外部からの変更として bodyText を再同期
  */
-function NandaListEditor({
-  label,
-  list,
-  onUpdate,
-  onAdd,
-  onRemove,
-  placeholder,
+function NandaIssueRow({
+  issue,
+  issueIdx,
+  onUpdateLabel,
+  onUpdateBody,
+  onCopy,
+  copiedKey,
 }: {
-  label: string;
-  list: string[];
-  onUpdate: (idx: number, value: string) => void;
-  onAdd: () => void;
-  onRemove: (idx: number) => void;
-  placeholder?: string;
+  issue: NursingCareIssueNanda;
+  issueIdx: number;
+  onUpdateLabel: (label: string) => void;
+  onUpdateBody: (parsed: { op: string[]; tp: string[]; ep: string[] }) => void;
+  onCopy: (text: string) => void;
+  copiedKey: string | null;
 }) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <label className="input-label text-xs mb-0">{label}（{list.length}項目）</label>
-        <button onClick={onAdd} className="btn-outline" style={{ padding: "0.15rem 0.5rem", fontSize: "0.7rem" }}>
-          <Plus size={12} />
-          項目追加
-        </button>
-      </div>
-      {list.length === 0 ? (
-        <p className="text-xs text-center py-2" style={{ color: "var(--text-muted)" }}>
-          項目なし。「項目追加」ボタンから追加してください。
-        </p>
-      ) : (
-        <div className="space-y-1">
-          {list.map((item, i) => (
-            <div key={i} className="flex gap-1 items-start">
-              <span className="text-xs pt-2" style={{ color: "var(--text-muted)", minWidth: "1.5rem" }}>
-                {circledNumber(i)}
-              </span>
-              <textarea
-                rows={1}
-                className="input-field text-sm flex-1"
-                style={{ resize: "vertical", minHeight: "2rem" }}
-                value={item}
-                onChange={(e) => onUpdate(i, e.target.value)}
-                placeholder={i === 0 ? placeholder : ""}
-              />
-              <button onClick={() => onRemove(i)} className="btn-delete" aria-label="項目削除" style={{ padding: "0.25rem" }}>
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+  const [bodyText, setBodyText] = useState<string>(() => issueToBodyText(issue));
 
-function circledNumber(idx: number): string {
-  const circled = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
-  return idx < circled.length ? circled[idx] : `(${idx + 1})`;
+  // AI再生成・取り込み等の外部変更時に bodyText を再同期
+  // aiGeneratedAt が変わったか、issueIdx が変わった（行入替）タイミングで反映
+  useEffect(() => {
+    setBodyText(issueToBodyText(issue));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issue.aiGeneratedAt, issue.importedAt, issueIdx]);
+
+  function handleBodyChange(text: string) {
+    setBodyText(text);
+    onUpdateBody(parseBodyText(text));
+  }
+
+  const totalChars = issue.diagnosisLabel.length + bodyText.length;
+
+  return (
+    <>
+      <div>
+        <label className="input-label text-xs">課題ラベル</label>
+        <input
+          type="text"
+          className="input-field text-sm"
+          value={issue.diagnosisLabel}
+          onChange={(e) => onUpdateLabel(e.target.value)}
+          placeholder="例：不安感増強に伴う日常生活への支障リスク"
+        />
+      </div>
+
+      <div>
+        <label className="input-label text-xs">
+          課題内容（OP / TP / EP まとめて編集可）
+        </label>
+        <textarea
+          rows={12}
+          maxLength={2500}
+          className="input-field text-sm"
+          style={{ resize: "vertical", fontFamily: "inherit" }}
+          value={bodyText}
+          onChange={(e) => handleBodyChange(e.target.value)}
+          placeholder={"(観察)\n①バイタルサイン（体温・血圧・脈拍・呼吸・SpO2）を毎訪問時測定\n②生活状況（清潔・食事・排泄・更衣・移動・睡眠）\n\n(ケア)\n①不安傾聴と共感的対応を毎訪問時5〜10分実施\n\n(指導)\n①休息の取り方と疲労時の対処法を本人・家族に説明"}
+        />
+        <div className="flex items-center justify-between text-xs" style={{ color: "var(--text-muted)" }}>
+          <button
+            onClick={() => onCopy(`${issue.diagnosisLabel}\n${bodyText}`.trim())}
+            className={`btn-copy ${copiedKey === `issue-${issueIdx}` ? "btn-copy-success" : ""}`}
+            disabled={!issue.diagnosisLabel.trim() && !bodyText.trim()}
+          >
+            <Copy size={12} />
+            {copiedKey === `issue-${issueIdx}` ? "コピー済！" : "課題まとめてコピー（カイポケ用）"}
+          </button>
+          <span>{totalChars} / 2500字</span>
+        </div>
+      </div>
+    </>
+  );
 }
 
 function SafetyCriticalBadge() {

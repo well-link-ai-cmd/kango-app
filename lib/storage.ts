@@ -869,22 +869,100 @@ export function getIssueFormat(issue: NursingCarePlanIssue): NursingCareIssueFor
 /** Issue の表示用テキスト（NANDAなら整形して文字列化、freeformはそのまま） */
 export function issueToDisplayText(issue: NursingCarePlanIssue): string {
   if (issue.format === "nanda") {
-    const lines: string[] = [issue.diagnosisLabel];
-    if (issue.op.length > 0) {
-      lines.push("(観察)");
-      issue.op.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
-    }
-    if (issue.tp.length > 0) {
-      lines.push("(ケア)");
-      issue.tp.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
-    }
-    if (issue.ep.length > 0) {
-      lines.push("(指導)");
-      issue.ep.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
-    }
-    return lines.join("\n");
+    const body = issueToBodyText(issue);
+    return body ? `${issue.diagnosisLabel}\n${body}` : issue.diagnosisLabel;
   }
   return issue.issue;
+}
+
+/**
+ * NANDA issue の本文部分（ラベルを除く OP/TP/EP の整形テキスト）。
+ * カイポケ「療養上の課題・支援内容」欄にコピペできる形式。
+ */
+export function issueToBodyText(issue: NursingCareIssueNanda): string {
+  const lines: string[] = [];
+  if (issue.op.length > 0) {
+    lines.push("(観察)");
+    issue.op.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
+  }
+  if (issue.tp.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("(ケア)");
+    issue.tp.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
+  }
+  if (issue.ep.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("(指導)");
+    issue.ep.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
+  }
+  return lines.join("\n");
+}
+
+/**
+ * NANDA本文テキストをパースして OP/TP/EP に分割する。
+ *
+ * 想定する書式（ヘッダ）:
+ *   - (観察) (ケア) (指導)
+ *   - 観察計画 / ケア計画 / 指導計画
+ *   - OP / TP / EP / O-P / T-P / E-P
+ *
+ * 各項目の区切り:
+ *   - ①②③ などの囲み数字
+ *   - 1. 2. 3.（半角数字）
+ *   - ・ や - の箇条書き
+ *   - 改行のみ
+ *
+ * ヘッダが検出できなかった場合は全文を op[] に入れる（情報損失を避ける）。
+ */
+export function parseBodyText(text: string): { op: string[]; tp: string[]; ep: string[] } {
+  const result: { op: string[]; tp: string[]; ep: string[] } = { op: [], tp: [], ep: [] };
+  if (!text.trim()) return result;
+
+  const lines = text.split("\n");
+  let current: "op" | "tp" | "ep" | "preamble" = "preamble";
+  const preambleLines: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // ヘッダ判定（行頭一致）
+    const opHeader = /^[(（]?\s*(観察|O-?P|OP)\s*[）)]?[:：]?\s*$/i;
+    const tpHeader = /^[(（]?\s*(ケア|援助|T-?P|TP|ケア計画|援助計画)\s*[）)]?[:：]?\s*$/i;
+    const epHeader = /^[(（]?\s*(指導|教育|E-?P|EP|指導計画|教育計画)\s*[）)]?[:：]?\s*$/i;
+
+    if (opHeader.test(line)) { current = "op"; continue; }
+    if (tpHeader.test(line)) { current = "tp"; continue; }
+    if (epHeader.test(line)) { current = "ep"; continue; }
+
+    // 行頭の箇条書き記号・番号を削除して項目テキスト本体を抽出
+    const cleaned = line
+      .replace(/^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]\s*/, "")
+      .replace(/^[(（]?\s*\d+\s*[)）]?[.．、]?\s*/, "")
+      .replace(/^[・\-—–]\s*/, "")
+      .trim();
+    if (!cleaned) continue;
+
+    if (current === "preamble") {
+      preambleLines.push(cleaned);
+    } else {
+      result[current].push(cleaned);
+    }
+  }
+
+  // ヘッダが1つも見つからなかった場合：全行を op[] にフォールバック（情報損失防止）
+  if (result.op.length === 0 && result.tp.length === 0 && result.ep.length === 0) {
+    return { op: preambleLines, tp: [], ep: [] };
+  }
+
+  // ヘッダ前の行は最初に検出されたセクションに前置として入れる（通常は preamble は空）
+  if (preambleLines.length > 0) {
+    if (result.op.length > 0) result.op = [...preambleLines, ...result.op];
+    else if (result.tp.length > 0) result.tp = [...preambleLines, ...result.tp];
+    else result.ep = [...preambleLines, ...result.ep];
+  }
+
+  return result;
 }
 
 /** ①②③... の囲み数字（10超は括弧数字へフォールバック） */
