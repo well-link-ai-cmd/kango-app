@@ -1,12 +1,23 @@
 # kango-app — AI訪問看護記録アシスト
 
-## 引き継ぎ（最終更新: 2026-05-05 Phase 8 完了・master 投入済・コスト最適化済）
+## 引き継ぎ（最終更新: 2026-05-05 月次報告書 Phase 1 実装完了・migration実行済・動作確認待ち）
 
-### 次フェーズ（最優先・別チャット推奨）
-1. **月次報告書（通常・精神科）の実装**：`docs/報告書3様式_手順書.md` 参照、Haiku 4.5（要約系）で実装
-2. **情報提供書（4宛先トーン変換）の実装**：同手順書、Haiku 4.5
-3. **褥瘡計画書 写真登録機能**：`memory/project_pressure_ulcer_photo.md` 参照、月次報告書実装後
-4. 実運用フィードバック収集：SOAP生成・看護計画書・評価の品質チェック
+### 次回再開時の最優先タスク（月次報告書 Phase 1）
+ブランチ: `feat/visit-report`（push済 e24117a）
+詳細メモ: `~/.claude/projects/C--Users-thegl-Documents-kango-app/memory/project_visit_reports_phase1.md`
+
+1. **migration 008 idempotent化のコミット&push**（DROP POLICY IF EXISTS 追加済・未コミット）
+2. **preview URL で E2E 動作確認**
+   - URL: `https://kango-83i94rhd3-well-link-ai-cmds-projects.vercel.app`（最新preview）
+   - 通常: SOAPあり患者 → 様式=通常 → 対象月選択 → AI生成 → 4欄編集 → 確定保存
+   - 精神科: 様式=精神科 → GAF入力 → AI生成 → 確定保存
+   - リハ別添: 通常で「別添あり」→ Barthel全10項目 → 合計100点表示確認
+3. **動作確認OK後 master へPR作成→マージ**
+
+### その後のフェーズ
+1. **情報提供書（4宛先トーン変換）の実装**：`docs/報告書3様式_手順書.md` 参照、Haiku 4.5
+2. **褥瘡計画書 写真登録機能**：`memory/project_pressure_ulcer_photo.md` 参照
+3. 実運用フィードバック収集：SOAP生成・看護計画書・評価の品質チェック
 
 ### モデル戦略（2026-05-05 確定）
 | 用途 | モデル | 根拠 |

@@ -96,18 +96,22 @@ CREATE TRIGGER trg_visit_reports_updated_at
 -- RLS 有効化
 ALTER TABLE visit_reports ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Authenticated users can view visit_reports" ON visit_reports;
 CREATE POLICY "Authenticated users can view visit_reports"
   ON visit_reports FOR SELECT
   USING (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "Authenticated users can insert visit_reports" ON visit_reports;
 CREATE POLICY "Authenticated users can insert visit_reports"
   ON visit_reports FOR INSERT
   WITH CHECK (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "Authenticated users can update visit_reports" ON visit_reports;
 CREATE POLICY "Authenticated users can update visit_reports"
   ON visit_reports FOR UPDATE
   USING (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "Authenticated users can delete visit_reports" ON visit_reports;
 CREATE POLICY "Authenticated users can delete visit_reports"
   ON visit_reports FOR DELETE
   USING (auth.role() = 'authenticated');
