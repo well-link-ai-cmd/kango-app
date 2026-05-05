@@ -22,6 +22,8 @@ const PROMPT_VERSION = "nursing-care-plan-suggest-labels-v1.0.0";
 const AI_MODEL = "claude-sonnet-4-6";
 const MAX_LABELS = 5;
 
+export const maxDuration = 300;
+
 interface SuggestLabelsInput {
   patientId: string;                       // SOAP/active_plan を Supabase から取得するため必須
   patient: {

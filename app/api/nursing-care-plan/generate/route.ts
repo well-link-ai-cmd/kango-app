@@ -22,6 +22,8 @@ import { getAuthUser } from "@/lib/supabase-server";
 const PROMPT_VERSION = "nursing-care-plan-generate-v1.1.0";  // v1.1.0: Sonnet 4.6 昇格
 const AI_MODEL = "claude-sonnet-4-6";
 
+export const maxDuration = 300;
+
 interface PreviousRecord {
   visitDate?: string;
   S: string;
@@ -122,7 +124,7 @@ export async function POST(req: NextRequest) {
     const response = await generateAiResponse(userPrompt, systemPrompt, {
       model: "sonnet",
       maxTokens: 8192,
-      timeoutMs: 90000,
+      timeoutMs: 180000,  // Sonnet 4.6 構造化出力（看護目標+課題複数件）に時間がかかるため 180秒
       temperature: 0.2,
       tool: generateTool,
     });

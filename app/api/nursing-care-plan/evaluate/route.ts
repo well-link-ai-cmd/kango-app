@@ -23,6 +23,9 @@ import { getAuthUser } from "@/lib/supabase-server";
 const PROMPT_VERSION = "nursing-care-plan-evaluate-v1.1.0";  // v1.1.0: Sonnet 4.6 昇格
 const AI_MODEL = "claude-sonnet-4-6";
 
+// Vercel Functions の実行時間上限（Sonnet 4.6 で複数課題評価のため長めに確保）
+export const maxDuration = 300;
+
 interface PeriodSoapRecord {
   visitDate?: string;
   S: string;
@@ -135,7 +138,7 @@ export async function POST(req: NextRequest) {
     const response = await generateAiResponse(userPrompt, systemPrompt, {
       model: "sonnet",
       maxTokens: 8192,
-      timeoutMs: 90000,
+      timeoutMs: 180000,  // Sonnet 4.6 で複数課題評価時、構造化出力に時間がかかるため 180秒
       temperature: 0.2,
       tool: evaluateTool,
     });
