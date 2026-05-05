@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
 
   const evaluateTool = {
     name: "output_issue_evaluations",
-    description: "各課題について、期間SOAPから簡潔な評価ドラフトを生成する。",
+    description: "各課題について、期間SOAPから自由文1ブロックの評価ドラフトを生成する（カイポケ・iBow等の評価欄にそのまま貼付できる形式）。",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -95,20 +95,12 @@ export async function POST(req: NextRequest) {
             type: "object",
             properties: {
               no: { type: "integer", description: "課題の行番号（入力と同じ）" },
-              course_summary: {
+              evaluation: {
                 type: "string",
-                description: "期間内の経過サマリ（300字程度）。日付を入れて時系列で簡潔に。",
-              },
-              change_points: {
-                type: "string",
-                description: "変化のポイント（200字程度）。期間開始/終了の対比。",
-              },
-              finding_draft: {
-                type: "string",
-                description: "所見下書き（200字程度）。『継続』『改善傾向』『悪化傾向』『見直しの余地あり』等の観察表現を根拠とともに。『目標達成』『中止』禁止。",
+                description: "評価本文（300〜500字程度の自然な自由文・1ブロック）。バイタル・症状・ADL・実施ケア・活動量・服薬の状況を時系列または項目順に簡潔に記述し、最後に『看護計画継続していきます』『計画見直しを検討します』等の方針を1文添える。見出し（【経過サマリ】等）は付けない。",
               },
             },
-            required: ["no", "course_summary", "change_points", "finding_draft"],
+            required: ["no", "evaluation"],
           },
           description: "課題ごとの評価。入力 issues と同じ順序・件数。",
         },
@@ -133,19 +125,15 @@ export async function POST(req: NextRequest) {
     const result = response.toolInput as {
       evaluations?: Array<{
         no: number;
-        course_summary: string;
-        change_points: string;
-        finding_draft: string;
+        evaluation: string;
       }>;
     };
 
-    // 評価テキストを組み立て（カイポケ評価欄への単一テキストとしてフォーマット）
+    // 評価本文（自由文1ブロック）。先頭に「【R元号年月日看護師評価】」プレフィックスを自動付与
+    const todayPrefix = formatJapaneseEraDate(new Date());
     const formatted = (result.evaluations ?? []).map((ev) => {
-      const text = [
-        `【経過サマリ】\n${ev.course_summary}`,
-        `【変化のポイント】\n${ev.change_points}`,
-        `【所見（下書き）】\n${ev.finding_draft}`,
-      ].join("\n\n");
+      const body = (ev.evaluation ?? "").trim();
+      const text = body.startsWith("【") ? body : `【${todayPrefix}看護師評価】${body}`;
       return {
         no: ev.no,
         evaluation: appendAiNotice(text),
@@ -179,35 +167,53 @@ function appendAiNotice(text: string): string {
   return `${text.trim()}\n\n※AI下書き。最終判定は看護師確認必須`;
 }
 
+/**
+ * 日付を「R{元号年}.M.D」形式に整形（例：R8.4.30）。
+ * 看護記録欄の慣習的なプレフィックス用。2019年5月以降は令和（R）固定。
+ */
+function formatJapaneseEraDate(d: Date): string {
+  const y = d.getFullYear() - 2018;  // 2019=令和1
+  return `R${y}.${d.getMonth() + 1}.${d.getDate()}`;
+}
+
 function buildSystemPrompt(): string {
-  return `あなたは訪問看護の看護計画書の評価欄を作成する専門AIである。指定期間SOAPから各課題について簡潔な評価ドラフトを生成する。
+  return `あなたは訪問看護の看護計画書の評価欄を作成する専門AIである。指定期間SOAPから各課題について自由文1ブロックの評価ドラフトを生成する。
+カイポケ・iBow 等の電子カルテの評価欄にそのまま貼付できる形式で出力する。
 
 # 出力ルール
 - evaluations は入力 issues と同じ順序・同じ件数
-- 各フィールドは指定字数を厳守し、簡潔に書く
+- 各 evaluation は 300〜500字程度の自然な自由文1ブロック
+- 見出し（【経過サマリ】【変化のポイント】等）は付けない
 - 出力は Tool use の JSON のみ（前置き不要）
 
-# 各フィールドの書き方
-- course_summary（300字程度）：時系列で簡潔に。日付明記（「4/1〜」「4/15時点で〜」）。該当課題に関連する事象のみ。
-- change_points（200字程度）：期間開始/終了の対比。「〜から〜へ変化」形式。変化なしなら「大きな変化なし」で可。
-- finding_draft（200字程度）：「継続」「改善傾向」「悪化傾向」「達成傾向が見られる」「見直しの余地あり」を根拠1〜2点で。語尾は「〜と考えられる」「〜傾向が見られる」。
+# 評価本文の書き方（300〜500字）
+- 自然な文章で1ブロック。改行は段落の自然な区切りにとどめる
+- 含めるべき要素（該当課題に関連する範囲で）：
+  * バイタル傾向（「概ね安定」「血圧やや高め」等）
+  * 主症状の経過（疼痛・呼吸器・循環器・排便・睡眠・精神症状など、課題に関連するもの）
+  * ADL・活動量（端座位・歩行距離・外出頻度など）
+  * 実施したケア（足浴・マッサージ・服薬管理・処置など）
+  * 服薬状況（「内服継続できている」等。具体的な薬剤名は記録にあるもののみ引用）
+  * 体重・摂取量等の数値（記録にあれば）
+- 末尾に方針を1文：「看護計画継続していきます」「計画見直しを検討します」「経過観察を継続します」等
+- 該当課題への期間内記載が乏しい場合は素直に「期間内の記録に該当課題への直接的言及は限定的」「継続観察と記録の充実が必要」等で短く
 
 # 禁止事項
-- 断定表現：「改善した」「悪化した」「治癒した」「効果があった」 → 「〜傾向と考えられる」に置き換え
+- 断定表現：「改善した」「悪化した」「治癒した」「効果があった」 → 「〜傾向で経過」「〜が維持されている」等に置き換え
 - 認定語：「目標達成」「中止」「中止検討」（看護師判断領域）
 - DESIGN-R / Barthel / GAF / 自立度の点数判定
 - 診断名変更、薬剤の処方/変更/中止の提案（医師権限）
-- ドレッシング材・薬剤の商品名・成分名
+- ドレッシング材・薬剤の商品名・成分名（記録にあるもののみ引用）
 - SOAPにない情報の創作
 
 # 医療用語の補正
 副雑音(×複雑音) / 緊満感(×緊張感) / 更衣(×交衣) / 洗髪(×先発) / 著明(×著名) / 褥瘡(×辱層) / 浮腫(×不種) / 嚥下(×円下) / 疼痛(×等痛) / 腸蠕動音(×朝蠕動音) / 腹部(×服部) / 排便(×配便) / 関節(×間接) / 仰臥位(×仰が位)
 
-# 言及が乏しい場合
-「該当課題への直接的言及は限定的」「継続観察と記録の充実が必要と考えられる」等の下書き表現で書く。
-
 # 個人情報
-氏名・住所・電話番号・「〜様」は出力しない。「利用者」「本人」を使用。`;
+氏名・住所・電話番号・「〜様」は出力しない。「利用者」「本人」を使用。
+
+# 出力例（参考・実事業所サンプル）
+"バイタルは概ね安定して経過しています。日中は端座位で過ごし、夜間も排尿後に再入眠でき睡眠状況は維持されています。食事・水分摂取は良好で、足浴・下腿マッサージを継続し浮腫悪化もありません。歩行は膝痛の影響で変動あるものの、中旬以降は散歩意欲が向上し気分の改善もみられています。排便は2日に1回でコントロール図っています。内服も継続して服用できており、総じてADL維持に向けたリハビリが順調で、心身の安定が保たれています。看護計画継続していきます。"`;
 }
 
 
