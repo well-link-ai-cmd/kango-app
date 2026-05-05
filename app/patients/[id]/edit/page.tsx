@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getPatients, savePatient, soapToText, textToSoap, type CareLevel, type DoctorInfo, type CareManagerInfo } from "@/lib/storage";
-import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2 } from "lucide-react";
+import { getPatients, savePatient, getNursingContents, saveNursingContents, generateId, soapToText, textToSoap, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem } from "@/lib/storage";
+import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2, ClipboardList } from "lucide-react";
 import Link from "next/link";
 
 const CARE_LEVELS: CareLevel[] = [
@@ -26,6 +26,12 @@ export default function EditPatientPage() {
   const [openCareManager, setOpenCareManager] = useState(false);
   const [carePlan, setCarePlan] = useState("");
   const [openCarePlan, setOpenCarePlan] = useState(false);
+
+  // ケア内容リスト（編集対応）
+  const [nursingContentItems, setNursingContentItems] = useState<NursingContentItem[]>([]);
+  const [newNursingContentsText, setNewNursingContentsText] = useState("");
+  const [openNursingContents, setOpenNursingContents] = useState(false);
+
   const [openInitialSoap, setOpenInitialSoap] = useState(false);
   const [initialSoapText1, setInitialSoapText1] = useState("");
   const [initialSoapDate1, setInitialSoapDate1] = useState("");
@@ -54,6 +60,13 @@ export default function EditPatientPage() {
       setCarePlan(patient.carePlan ?? "");
       if (patient.carePlan) setOpenCarePlan(true);
       // 初期SOAP記録を読み込み（統合テキスト形式に変換）
+      // ケア内容リストを読み込み
+      const nc = await getNursingContents(id);
+      if (nc && nc.items.length > 0) {
+        setNursingContentItems(nc.items);
+        setOpenNursingContents(true);
+      }
+
       if (patient.initialSoapRecords && patient.initialSoapRecords.length > 0) {
         const r1 = patient.initialSoapRecords[0];
         setInitialSoapText1(soapToText(r1.S, r1.O, r1.A, r1.P));
@@ -69,6 +82,39 @@ export default function EditPatientPage() {
     setLoaded(true);
     })();
   }, [id]);
+
+  // 複数行・箇条書きテキストを行単位で分割
+  function parseNursingContentLines(raw: string): string[] {
+    return raw
+      .split("\n")
+      .map((line) =>
+        line
+          .trim()
+          .replace(/^[・•\-＊\*\+]\s*/, "")
+          .replace(/^\d+[\.\)]\s*/, "")
+          .trim()
+      )
+      .filter((line) => line.length > 0);
+  }
+
+  function handleAddNursingContents() {
+    const lines = parseNursingContentLines(newNursingContentsText);
+    if (lines.length === 0) return;
+    const now = new Date().toISOString();
+    const newItems: NursingContentItem[] = lines.map((text) => ({
+      id: generateId(),
+      text,
+      isActive: true,
+      source: "manual" as const,
+      addedAt: now,
+    }));
+    setNursingContentItems([...nursingContentItems, ...newItems]);
+    setNewNursingContentsText("");
+  }
+
+  function handleRemoveNursingContent(itemId: string) {
+    setNursingContentItems(nursingContentItems.filter((i) => i.id !== itemId));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -100,6 +146,14 @@ export default function EditPatientPage() {
       carePlan: carePlan.trim() || undefined,
       initialSoapRecords: initialSoapRecords.length > 0 ? initialSoapRecords : undefined,
     });
+
+    // ケア内容リストを保存
+    await saveNursingContents({
+      patientId: id,
+      items: nursingContentItems,
+      updatedAt: new Date().toISOString(),
+    });
+
     router.push(`/patients/${id}`);
   }
 
@@ -308,6 +362,84 @@ export default function EditPatientPage() {
                   value={carePlan}
                   onChange={(e) => setCarePlan(e.target.value)}
                 />
+              </div>
+            )}
+          </div>
+
+          {/* Nursing Contents（ケア内容リスト） */}
+          <div className="card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOpenNursingContents(!openNursingContents)}
+              className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-[rgba(0,200,200,0.02)]"
+            >
+              <div className="text-left flex items-start gap-3">
+                <ClipboardList size={20} style={{ color: "var(--accent-cyan)", marginTop: "2px" }} />
+                <div>
+                  <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
+                    ケア内容リスト（{nursingContentItems.length}件）
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>訪問時に実施するケア項目を追加・削除できます</p>
+                </div>
+              </div>
+              {openNursingContents
+                ? <ChevronUp size={18} style={{ color: "var(--text-muted)" }} />
+                : <ChevronDown size={18} style={{ color: "var(--text-muted)" }} />}
+            </button>
+            {openNursingContents && (
+              <div className="px-5 pb-5 space-y-3 animate-fade-in">
+                {nursingContentItems.length > 0 && (
+                  <ul className="space-y-1">
+                    {nursingContentItems.map((item) => (
+                      <li
+                        key={item.id}
+                        className="flex items-center gap-2 px-3 py-2 rounded"
+                        style={{ background: "var(--bg-tertiary)" }}
+                      >
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "var(--accent-cyan)" }} />
+                        <span className="flex-1 text-sm" style={{ color: "var(--text-primary)" }}>{item.text}</span>
+                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>{item.source === "ai" ? "AI" : "手動"}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveNursingContent(item.id)}
+                          className="btn-delete"
+                          aria-label="削除"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div>
+                  <p className="input-label text-xs">項目を追加（複数行・箇条書き対応）</p>
+                  <textarea
+                    rows={3}
+                    className="input-field text-sm"
+                    style={{ resize: "vertical", fontFamily: "inherit" }}
+                    placeholder={"例：\n・バイタル測定\n・排便状態の確認"}
+                    value={newNursingContentsText}
+                    onChange={(e) => setNewNursingContentsText(e.target.value)}
+                  />
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                      {parseNursingContentLines(newNursingContentsText).length} 件追加されます
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleAddNursingContents}
+                      disabled={parseNursingContentLines(newNursingContentsText).length === 0}
+                      className="btn-outline"
+                      style={{ borderRadius: "12px" }}
+                    >
+                      <Plus size={16} />
+                      追加
+                    </button>
+                  </div>
+                  <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+                    詳細な編集（インライン編集・AIで整え直す等）は患者ページの「看護内容リスト」から行えます。
+                  </p>
+                </div>
               </div>
             )}
           </div>

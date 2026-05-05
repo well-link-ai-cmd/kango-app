@@ -7,16 +7,21 @@ import {
   getPatients, getRecords, getNursingContents, saveNursingContents, generateId,
   type Patient, type SoapRecord, type NursingContents, type NursingContentItem,
 } from "@/lib/storage";
-import { ArrowLeft, Plus, Trash2, Sparkles, RefreshCw, Check, X, Home } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Sparkles, RefreshCw, Check, X, Home, Pencil, Save, Wand2, Undo2 } from "lucide-react";
 
 export default function NursingContentsPage() {
   const { id } = useParams<{ id: string }>();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [contents, setContents] = useState<NursingContents | null>(null);
   const [records, setRecords] = useState<SoapRecord[]>([]);
-  const [newItemText, setNewItemText] = useState("");
+  const [newItemsText, setNewItemsText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [refining, setRefining] = useState(false);
   const [error, setError] = useState("");
+
+  // インライン編集
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   // AI差分分析の結果
   const [diffResult, setDiffResult] = useState<{
@@ -27,6 +32,16 @@ export default function NursingContentsPage() {
 
   // AI初回抽出のプレビュー
   const [extractPreview, setExtractPreview] = useState<string[] | null>(null);
+
+  // 「AIで整え直す」プレビュー
+  const [refinePreview, setRefinePreview] = useState<{
+    refined_items: { text: string; category: string; origin: string }[];
+    duplicates_check: string[];
+    reason: string;
+  } | null>(null);
+
+  // 「元に戻す」用バックアップ（直前の適用の取り消し用、1回のみ）
+  const [lastItemsBackup, setLastItemsBackup] = useState<NursingContentItem[] | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -50,19 +65,36 @@ export default function NursingContentsPage() {
     setContents(updated);
   }
 
-  // 手動追加
-  async function handleAddItem() {
-    if (!newItemText.trim()) return;
-    const newItem: NursingContentItem = {
+  // 複数テキストを行単位・箇条書き単位で分割
+  function parseInputLines(raw: string): string[] {
+    return raw
+      .split("\n")
+      .map((line) =>
+        line
+          .trim()
+          // 行頭の箇条書き記号や番号を除去
+          .replace(/^[・•\-＊\*\+]\s*/, "")
+          .replace(/^\d+[\.\)]\s*/, "")
+          .trim()
+      )
+      .filter((line) => line.length > 0);
+  }
+
+  // 手動追加（複数項目一括対応）
+  async function handleAddItems() {
+    const lines = parseInputLines(newItemsText);
+    if (lines.length === 0) return;
+    const now = new Date().toISOString();
+    const newItems: NursingContentItem[] = lines.map((text) => ({
       id: generateId(),
-      text: newItemText.trim(),
+      text,
       isActive: true,
-      source: "manual",
-      addedAt: new Date().toISOString(),
-    };
-    const items = [...(contents?.items ?? []), newItem];
+      source: "manual" as const,
+      addedAt: now,
+    }));
+    const items = [...(contents?.items ?? []), ...newItems];
     await updateContents(items);
-    setNewItemText("");
+    setNewItemsText("");
   }
 
   // 項目削除
@@ -70,6 +102,84 @@ export default function NursingContentsPage() {
     if (!contents) return;
     const items = contents.items.filter((i) => i.id !== itemId);
     await updateContents(items);
+  }
+
+  // インライン編集
+  function handleStartEdit(item: NursingContentItem) {
+    setEditingItemId(item.id);
+    setEditingText(item.text);
+  }
+
+  async function handleSaveEdit() {
+    if (!contents || !editingItemId) return;
+    const trimmed = editingText.trim();
+    if (!trimmed) {
+      setError("項目名は空にできません");
+      return;
+    }
+    const items = contents.items.map((i) =>
+      i.id === editingItemId ? { ...i, text: trimmed } : i
+    );
+    await updateContents(items);
+    setEditingItemId(null);
+    setEditingText("");
+  }
+
+  function handleCancelEdit() {
+    setEditingItemId(null);
+    setEditingText("");
+  }
+
+  // AIで整え直す
+  async function handleRefine() {
+    if (!contents || contents.items.length === 0) return;
+    setRefining(true);
+    setError("");
+    try {
+      const res = await fetch("/api/nursing-contents/refine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentItems: contents.items.map((i) => i.text),
+          enableCategorization: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setRefinePreview({
+        refined_items: data.refined_items ?? [],
+        duplicates_check: data.duplicates_check ?? [],
+        reason: data.reason ?? "",
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "AI整理に失敗しました");
+    } finally {
+      setRefining(false);
+    }
+  }
+
+  async function handleApplyRefine() {
+    if (!refinePreview || !contents) return;
+    // バックアップ取得（元に戻す用）
+    setLastItemsBackup(contents.items);
+    const now = new Date().toISOString();
+    const newItems: NursingContentItem[] = refinePreview.refined_items.map((ri) => ({
+      id: generateId(),
+      text: ri.category?.trim()
+        ? `[${ri.category}] ${ri.text}`
+        : ri.text,
+      isActive: true,
+      source: "ai" as const,
+      addedAt: now,
+    }));
+    await updateContents(newItems);
+    setRefinePreview(null);
+  }
+
+  async function handleUndoRefine() {
+    if (!lastItemsBackup) return;
+    await updateContents(lastItemsBackup);
+    setLastItemsBackup(null);
   }
 
   // AI初回抽出
@@ -305,6 +415,9 @@ export default function NursingContentsPage() {
                 <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
                   登録済みケア項目（{contents.items.length}件）
                 </p>
+                <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                  項目をクリックすると編集できます
+                </p>
               </div>
               <ul>
                 {contents.items.map((item) => (
@@ -317,41 +430,69 @@ export default function NursingContentsPage() {
                       className="w-2 h-2 rounded-full flex-shrink-0"
                       style={{ background: "var(--accent-cyan)" }}
                     />
-                    <span className="flex-1 text-sm" style={{ color: "var(--text-primary)" }}>
-                      {item.text}
-                    </span>
-                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                      {item.source === "ai" ? "AI" : "手動"}
-                    </span>
-                    <button
-                      onClick={() => handleDeleteItem(item.id)}
-                      className="btn-delete"
-                      aria-label="削除"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {editingItemId === item.id ? (
+                      <>
+                        <input
+                          type="text"
+                          className="input-field flex-1 text-sm"
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); handleSaveEdit(); }
+                            if (e.key === "Escape") { e.preventDefault(); handleCancelEdit(); }
+                          }}
+                          autoFocus
+                        />
+                        <button onClick={handleSaveEdit} className="btn-outline" style={{ padding: "0.25rem 0.5rem" }} aria-label="保存">
+                          <Save size={14} />
+                        </button>
+                        <button onClick={handleCancelEdit} className="btn-outline" style={{ padding: "0.25rem 0.5rem" }} aria-label="キャンセル">
+                          <X size={14} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleStartEdit(item)}
+                          className="flex-1 text-sm text-left"
+                          style={{ color: "var(--text-primary)", background: "transparent", border: "none", padding: 0, cursor: "text" }}
+                        >
+                          {item.text}
+                        </button>
+                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                          {item.source === "ai" ? "AI" : "手動"}
+                        </span>
+                        <button onClick={() => handleStartEdit(item)} className="btn-outline" style={{ padding: "0.25rem 0.5rem" }} aria-label="編集" title="編集">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => handleDeleteItem(item.id)} className="btn-delete" aria-label="削除">
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>
             </div>
 
-            {/* 手動追加フォーム */}
+            {/* 手動追加フォーム（複数行対応） */}
             <div className="card p-5 animate-fade-in-up">
-              <p className="input-label">ケア項目を追加</p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  className="input-field flex-1"
-                  placeholder="例：排便コントロールの確認"
-                  value={newItemText}
-                  onChange={(e) => setNewItemText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); handleAddItem(); }
-                  }}
-                />
+              <p className="input-label">ケア項目を追加（複数行・箇条書き対応）</p>
+              <textarea
+                rows={3}
+                className="input-field text-sm"
+                style={{ resize: "vertical", fontFamily: "inherit" }}
+                placeholder="1行1項目。複数項目を一度にペースト可能。&#10;例：&#10;・バイタル測定&#10;・排便状態の確認&#10;・創部ガーゼ交換"
+                value={newItemsText}
+                onChange={(e) => setNewItemsText(e.target.value)}
+              />
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  {parseInputLines(newItemsText).length} 件追加されます
+                </span>
                 <button
-                  onClick={handleAddItem}
-                  disabled={!newItemText.trim()}
+                  onClick={handleAddItems}
+                  disabled={parseInputLines(newItemsText).length === 0}
                   className="btn-outline"
                   style={{ borderRadius: "12px" }}
                 >
@@ -360,6 +501,76 @@ export default function NursingContentsPage() {
                 </button>
               </div>
             </div>
+
+            {/* AIで整え直す */}
+            <div className="card p-5 space-y-3 animate-fade-in-up" style={{ borderLeft: "3px solid var(--accent-cyan)" }}>
+              <div className="flex items-center gap-2">
+                <Wand2 size={16} style={{ color: "var(--accent-cyan)" }} />
+                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                  AIで整え直す
+                </p>
+              </div>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                重複統合・語尾統一・カテゴリ分類（任意）をAIが提案します。承認するまで現在のリストは変わりません。
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={handleRefine} disabled={refining} className="btn-outline">
+                  <Wand2 size={14} className={refining ? "animate-spin" : ""} />
+                  {refining ? "AI整理中..." : "整理案を生成"}
+                </button>
+                {lastItemsBackup && (
+                  <button onClick={handleUndoRefine} className="btn-outline">
+                    <Undo2 size={14} />
+                    直前の適用を元に戻す
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 整理案プレビュー */}
+            {refinePreview && (
+              <div className="card p-5 space-y-4 animate-fade-in-up" style={{ borderLeft: "3px solid var(--accent-cyan)" }}>
+                <div>
+                  <p className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
+                    AI整理案（{refinePreview.refined_items.length}件）
+                  </p>
+                  {refinePreview.reason && (
+                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>{refinePreview.reason}</p>
+                  )}
+                </div>
+                {refinePreview.duplicates_check.length > 0 && (
+                  <div className="p-3 rounded text-xs" style={{ background: "rgba(245, 158, 11, 0.05)", borderLeft: "2px solid rgb(245, 158, 11)" }}>
+                    <p className="font-semibold mb-1" style={{ color: "#B45309" }}>統合された項目</p>
+                    {refinePreview.duplicates_check.map((d, i) => (
+                      <p key={i} style={{ color: "var(--text-muted)" }}>・{d}</p>
+                    ))}
+                  </div>
+                )}
+                <ul className="space-y-1">
+                  {refinePreview.refined_items.map((ri, i) => (
+                    <li key={i} className="flex items-center gap-2 text-sm p-2 rounded" style={{ background: "var(--bg-tertiary)" }}>
+                      {ri.category && (
+                        <span className="text-xs px-2 py-0.5 rounded" style={{ background: "rgba(0,200,200,0.1)", color: "var(--accent-cyan)" }}>
+                          {ri.category}
+                        </span>
+                      )}
+                      <span className="flex-1" style={{ color: "var(--text-primary)" }}>{ri.text}</span>
+                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>{ri.origin}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex gap-2">
+                  <button onClick={handleApplyRefine} className="btn-save flex-1">
+                    <Check size={14} />
+                    この整理案を適用
+                  </button>
+                  <button onClick={() => setRefinePreview(null)} className="btn-outline">
+                    <X size={14} />
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* AI差分分析 */}
             {records.length > 0 && (
@@ -437,21 +648,22 @@ export default function NursingContentsPage() {
         {/* コンテンツは作成済みだが項目が0件（手動モードで開始した場合） */}
         {contents && contents.items.length === 0 && !extractPreview && (
           <div className="card p-5 animate-fade-in-up">
-            <p className="input-label">ケア項目を追加</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                className="input-field flex-1"
-                placeholder="例：バイタル測定（血圧・脈拍・体温・SpO2）"
-                value={newItemText}
-                onChange={(e) => setNewItemText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); handleAddItem(); }
-                }}
-              />
+            <p className="input-label">ケア項目を追加（複数行・箇条書き対応）</p>
+            <textarea
+              rows={4}
+              className="input-field text-sm"
+              style={{ resize: "vertical", fontFamily: "inherit" }}
+              placeholder="1行1項目。複数項目を一度にペースト可能。&#10;例：&#10;・バイタル測定（血圧・脈拍・体温・SpO2）&#10;・排便状態の確認&#10;・ROM訓練"
+              value={newItemsText}
+              onChange={(e) => setNewItemsText(e.target.value)}
+            />
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                {parseInputLines(newItemsText).length} 件追加されます
+              </span>
               <button
-                onClick={handleAddItem}
-                disabled={!newItemText.trim()}
+                onClick={handleAddItems}
+                disabled={parseInputLines(newItemsText).length === 0}
                 className="btn-outline"
                 style={{ borderRadius: "12px" }}
               >

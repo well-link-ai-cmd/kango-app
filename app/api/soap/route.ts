@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
-import { getAuthUser } from "@/lib/supabase-server";
+import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 import { SOAP_FEWSHOT_EXAMPLES } from "@/lib/soap-fewshot";
 
+/**
+ * 参照コンテキストの優先順位（過渡期）：
+ *   1. 看護計画書（is_draft=false の最新 plan_date）← あればこれを優先参照
+ *   2. carePlan（旧欄、過渡期のみ）← 看護計画書がない場合の補助参照
+ *   3. ケア内容リスト ← 常に参照（別経路）
+ * 看護計画書feature完全移行後に carePlan カラムを drop する想定。
+ */
 export async function POST(req: NextRequest) {
   const user = await getAuthUser();
   if (!user) {
@@ -10,16 +17,47 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { sInput, rawInput, carePlan, previousRecords, alertAnswers, questionAnswers, initialSoapRecords } = body;
+  const { patientId, sInput, rawInput, carePlan, previousRecords, alertAnswers, questionAnswers, initialSoapRecords } = body;
 
   if (!rawInput?.trim()) {
     return NextResponse.json({ error: "訪問内容が入力されていません" }, { status: 400 });
   }
 
-  // ケアプラン（旧欄・過渡期参照）。将来 nursing_care_plans 機能がマージされたら最優先コンテキストとして活用される想定
-  const carePlanSection = carePlan
-    ? `\n【ケアプラン・担当者会議の方針（旧欄・過渡期参照）】\n${carePlan}\n`
-    : "";
+  // 看護計画書（確定版）の取得：最優先コンテキスト
+  let activeNursingCarePlanSection = "";
+  if (patientId) {
+    try {
+      const supabase = await getServerSupabase();
+      const { data: plan } = await supabase
+        .from("nursing_care_plans")
+        .select("plan_date, nursing_goal, issues")
+        .eq("patient_id", patientId)
+        .eq("is_draft", false)
+        .order("plan_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (plan) {
+        // issues は NANDA形式 / freeform形式が混在し得る（migration 007 Phase 8 以降）
+        // - NANDA: { no, format:'nanda', diagnosis_label, op[], tp[], ep[] }
+        // - freeform: { no, issue } （format フィールドがない既存データもこちら扱い）
+        const issues = (plan.issues as Array<Record<string, unknown>> | null) ?? [];
+        const issuesText = issues.length > 0
+          ? issues.map((i) => formatPlanIssue(i)).join("\n")
+          : "  （なし）";
+        activeNursingCarePlanSection = `\n【看護計画書（確定版・最優先コンテキスト、作成日 ${plan.plan_date}）】\n目標：${plan.nursing_goal ?? "（未記入）"}\n療養上の課題：\n${issuesText}\n`;
+      }
+    } catch (e) {
+      // 看護計画書取得失敗は致命的でないので握りつぶす（carePlanにフォールバック）
+      console.error("active nursing care plan fetch error:", e);
+    }
+  }
+
+  // 旧 carePlan（過渡期フォールバック）：看護計画書がなければ補助参照
+  const carePlanSection = activeNursingCarePlanSection
+    ? "" // 看護計画書があれば carePlan は参照しない
+    : carePlan
+      ? `\n【ケアプラン・担当者会議の方針（旧欄・過渡期参照）】\n${carePlan}\n`
+      : "";
 
   // 過去の訪問記録（アプリ内の記録 + 初期インポート記録を統合）
   const allPrevRecords = [
@@ -27,7 +65,7 @@ export async function POST(req: NextRequest) {
     ...(initialSoapRecords ?? []),
   ].slice(0, 3);
 
-  // 継続確認アラートへの回答（メモの記載漏れを補う事実 → O/A/P に反映。S 欄には入れない）
+  // 継続確認アラートへの回答（メモの記載漏れを補う事実 → 必ず O/A/P に反映。S 欄には入れない）
   const alertAnswersSection = alertAnswers && alertAnswers.length > 0
     ? "\n【前回からの継続確認事項への回答（今回の事実として必ず O/A/P に反映。S 欄には入れない）】\n" +
       alertAnswers
@@ -36,7 +74,7 @@ export async function POST(req: NextRequest) {
         .join("\n") + "\n"
     : "";
 
-  // 確認質問への回答（メモの記載漏れを補う事実 → O/A/P に反映。S 欄には入れない）
+  // 確認質問への回答（メモの記載漏れを補う事実 → 必ず O/A/P に反映。S 欄には入れない）
   const answersSection = questionAnswers && questionAnswers.length > 0
     ? "\n【AIからの確認質問への回答（今回の事実として必ず O/A/P に反映。S 欄には入れない）】\n" +
       questionAnswers
@@ -141,13 +179,13 @@ ${SOAP_FEWSHOT_EXAMPLES}`;
     : "";
 
   const prompt = hasSInput
-    ? `${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【S情報（看護師入力済み・誤変換のみ補正してそのまま返す）】
+    ? `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【S情報（看護師入力済み・誤変換のみ補正してそのまま返す）】
 ${sInput}
 
 【今回の訪問メモ（これをO・A・Pに変換する）】
 ${rawInput}`
 
-    : `${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
+    : `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
 ${rawInput}`;
 
   // Tool use でJSON形式を強制。
@@ -197,4 +235,26 @@ ${rawInput}`;
     const errorMessage = e instanceof Error ? e.message : "AI変換中にエラーが発生しました。";
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
+}
+
+/**
+ * 看護計画書の issue（JSONB の1要素）を SOAP プロンプト注入用テキストに整形。
+ * NANDA形式と freeform形式の両対応。
+ */
+function formatPlanIssue(raw: Record<string, unknown>): string {
+  const no = raw.no ?? "?";
+  if (raw.format === "nanda") {
+    const label = (raw.diagnosis_label as string) ?? "";
+    const op = Array.isArray(raw.op) ? (raw.op as string[]) : [];
+    const tp = Array.isArray(raw.tp) ? (raw.tp as string[]) : [];
+    const ep = Array.isArray(raw.ep) ? (raw.ep as string[]) : [];
+    const lines = [`  ${no}. ${label}`];
+    if (op.length > 0) lines.push(`     OP: ${op.join(" / ")}`);
+    if (tp.length > 0) lines.push(`     TP: ${tp.join(" / ")}`);
+    if (ep.length > 0) lines.push(`     EP: ${ep.join(" / ")}`);
+    return lines.join("\n");
+  }
+  // freeform（format 未指定の既存データもこちら）
+  const issue = (raw.issue as string) ?? "";
+  return `  ${no}. ${issue}`;
 }

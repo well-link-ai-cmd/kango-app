@@ -811,6 +811,415 @@ export async function deletePressureUlcerPlan(id: string): Promise<void> {
   if (error) console.error("deletePressureUlcerPlan error:", error);
 }
 
+// =============================================================
+// 訪問看護計画書（nursing_care_plans）
+// カイポケ「訪問看護計画書」フォーマット準拠
+// 手順書: docs/看護計画書_手順書.md
+// =============================================================
+
+export type NursingCarePlanType = "介護" | "医療";
+export type NursingCarePlanTitle = "共通" | "看護" | "リハ";
+/**
+ * 課題の記述形式
+ * - 'nanda':    課題ラベル + OP/TP/EP の構造化
+ * - 'freeform': 自由文1ブロック（既存互換 + コピペ取り込み）
+ */
+export type NursingCareIssueFormat = "nanda" | "freeform";
+
+/** AI生成・取り込みのメタ情報（NANDA / freeform 共通） */
+export interface NursingCareIssueMeta {
+  aiGenerated?: boolean;        // AIで生成された下書きかどうか
+  aiModel?: string;             // 'claude-sonnet-4-6' 等
+  aiGeneratedAt?: string;       // AI生成日時
+  imported?: boolean;           // 既存計画書のコピペ取り込み起源かどうか
+  importedAt?: string;          // 取り込み日時
+}
+
+/** NANDA形式の課題 */
+export interface NursingCareIssueNanda extends NursingCareIssueMeta {
+  no: number;
+  date?: string;                // 記入日 YYYY-MM-DD
+  format: "nanda";
+  diagnosisLabel: string;       // 課題ラベル（看護診断名 or 自院の言い回し）
+  op: string[];                 // 観察計画（O-P）
+  tp: string[];                 // ケア計画（T-P）
+  ep: string[];                 // 指導計画（E-P）
+  evaluation?: string;          // 評価（AI下書き・看護師確認必須）
+  evaluatedAt?: string;
+}
+
+/** 自由記載形式の課題（既存実装互換 + コピペ取り込み） */
+export interface NursingCareIssueFreeform extends NursingCareIssueMeta {
+  no: number;
+  date?: string;
+  format?: "freeform";          // 後方互換のため optional（未指定時は freeform 扱い）
+  issue: string;                // 自由文（AI下書き or コピペ原文）
+  evaluation?: string;
+  evaluatedAt?: string;
+}
+
+/** 療養上の課題・支援内容 1行分（Discriminated Union） */
+export type NursingCarePlanIssue = NursingCareIssueNanda | NursingCareIssueFreeform;
+
+/** Issue から format を判定（後方互換：未指定なら freeform） */
+export function getIssueFormat(issue: NursingCarePlanIssue): NursingCareIssueFormat {
+  return issue.format === "nanda" ? "nanda" : "freeform";
+}
+
+/** Issue の表示用テキスト（NANDAなら整形して文字列化、freeformはそのまま） */
+export function issueToDisplayText(issue: NursingCarePlanIssue): string {
+  if (issue.format === "nanda") {
+    const body = issueToBodyText(issue);
+    return body ? `${issue.diagnosisLabel}\n${body}` : issue.diagnosisLabel;
+  }
+  return issue.issue;
+}
+
+/**
+ * NANDA issue の本文部分（ラベルを除く OP/TP/EP の整形テキスト）。
+ * カイポケ「療養上の課題・支援内容」欄にコピペできる形式。
+ */
+export function issueToBodyText(issue: NursingCareIssueNanda): string {
+  const lines: string[] = [];
+  if (issue.op.length > 0) {
+    lines.push("(観察)");
+    issue.op.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
+  }
+  if (issue.tp.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("(ケア)");
+    issue.tp.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
+  }
+  if (issue.ep.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("(指導)");
+    issue.ep.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
+  }
+  return lines.join("\n");
+}
+
+/**
+ * NANDA本文テキストをパースして OP/TP/EP に分割する。
+ *
+ * 想定する書式（ヘッダ）:
+ *   - (観察) (ケア) (指導)
+ *   - 観察計画 / ケア計画 / 指導計画
+ *   - OP / TP / EP / O-P / T-P / E-P
+ *
+ * 各項目の区切り:
+ *   - ①②③ などの囲み数字
+ *   - 1. 2. 3.（半角数字）
+ *   - ・ や - の箇条書き
+ *   - 改行のみ
+ *
+ * ヘッダが検出できなかった場合は全文を op[] に入れる（情報損失を避ける）。
+ */
+export function parseBodyText(text: string): { op: string[]; tp: string[]; ep: string[] } {
+  const result: { op: string[]; tp: string[]; ep: string[] } = { op: [], tp: [], ep: [] };
+  if (!text.trim()) return result;
+
+  const lines = text.split("\n");
+  let current: "op" | "tp" | "ep" | "preamble" = "preamble";
+  const preambleLines: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // ヘッダ判定（行頭一致）
+    const opHeader = /^[(（]?\s*(観察|O-?P|OP)\s*[）)]?[:：]?\s*$/i;
+    const tpHeader = /^[(（]?\s*(ケア|援助|T-?P|TP|ケア計画|援助計画)\s*[）)]?[:：]?\s*$/i;
+    const epHeader = /^[(（]?\s*(指導|教育|E-?P|EP|指導計画|教育計画)\s*[）)]?[:：]?\s*$/i;
+
+    if (opHeader.test(line)) { current = "op"; continue; }
+    if (tpHeader.test(line)) { current = "tp"; continue; }
+    if (epHeader.test(line)) { current = "ep"; continue; }
+
+    // 行頭の箇条書き記号・番号を削除して項目テキスト本体を抽出
+    const cleaned = line
+      .replace(/^[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳]\s*/, "")
+      .replace(/^[(（]?\s*\d+\s*[)）]?[.．、]?\s*/, "")
+      .replace(/^[・\-—–]\s*/, "")
+      .trim();
+    if (!cleaned) continue;
+
+    if (current === "preamble") {
+      preambleLines.push(cleaned);
+    } else {
+      result[current].push(cleaned);
+    }
+  }
+
+  // ヘッダが1つも見つからなかった場合：全行を op[] にフォールバック（情報損失防止）
+  if (result.op.length === 0 && result.tp.length === 0 && result.ep.length === 0) {
+    return { op: preambleLines, tp: [], ep: [] };
+  }
+
+  // ヘッダ前の行は最初に検出されたセクションに前置として入れる（通常は preamble は空）
+  if (preambleLines.length > 0) {
+    if (result.op.length > 0) result.op = [...preambleLines, ...result.op];
+    else if (result.tp.length > 0) result.tp = [...preambleLines, ...result.tp];
+    else result.ep = [...preambleLines, ...result.ep];
+  }
+
+  return result;
+}
+
+/** ①②③... の囲み数字（10超は括弧数字へフォールバック） */
+function formatBullet(idx: number): string {
+  const circled = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+  return idx < circled.length ? circled[idx] : `(${idx + 1})`;
+}
+
+export interface NursingCarePlan {
+  id: string;
+  patientId: string;
+
+  // 監査情報
+  createdAt: string;
+  updatedAt: string;
+
+  // 基本情報
+  planDate: string;                        // 作成年月日 YYYY-MM-DD
+  planType: NursingCarePlanType;           // 介護 / 医療
+  planTitle: NursingCarePlanTitle;         // 共通 / 看護 / リハ
+  isDraft: boolean;                        // 下書き / 確定
+
+  // 課題の記述形式（NANDA構造化 / 自由記載）
+  issueFormat: NursingCareIssueFormat;
+
+  // 作成者（署名印字項目）
+  authorName?: string;
+  authorTitle?: string;
+  author2Name?: string;
+  author2Title?: string;
+
+  // 看護・リハビリの目標（3000字、AI下書き可）
+  nursingGoal?: string;
+
+  // 療養上の課題・支援内容（複数行）
+  issues: NursingCarePlanIssue[];
+
+  // 衛生材料の情報（看護師手入力、AI禁止）
+  hasSupplies: boolean;
+  supplyProcedure?: string;     // 処置の内容（3000字）
+  supplyMaterials?: string;     // 衛生材料（種類・サイズ）等（3000字）
+  supplyQuantity?: string;      // 必要量（3000字）
+
+  // 備考（3000字、AI補助可）
+  remarks?: string;
+
+  // 議事録（任意・AI生成時の参照ソース）
+  // 退院前カンファレンス・サービス担当者会議等の貼付テキスト
+  conferenceMemo?: string;
+
+  // AI生成メタ情報
+  aiModel?: string;
+  aiPromptVersion?: string;
+  aiGeneratedAt?: string;
+}
+
+/** DBの issues JSONB（snake_case）を camelCase + Discriminated Union に変換 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function issueFromRow(raw: any, idx: number): NursingCarePlanIssue {
+  const no: number = typeof raw.no === "number" ? raw.no : idx + 1;
+  const date: string | undefined = raw.date ?? undefined;
+  const evaluation: string | undefined = raw.evaluation ?? undefined;
+  const evaluatedAt: string | undefined = raw.evaluated_at ?? raw.evaluatedAt ?? undefined;
+  const meta: NursingCareIssueMeta = {
+    aiGenerated: raw.ai_generated ?? raw.aiGenerated ?? undefined,
+    aiModel: raw.ai_model ?? raw.aiModel ?? undefined,
+    aiGeneratedAt: raw.ai_generated_at ?? raw.aiGeneratedAt ?? undefined,
+    imported: raw.imported ?? undefined,
+    importedAt: raw.imported_at ?? raw.importedAt ?? undefined,
+  };
+  if (raw.format === "nanda") {
+    return {
+      no, date, format: "nanda",
+      diagnosisLabel: raw.diagnosis_label ?? raw.diagnosisLabel ?? "",
+      op: Array.isArray(raw.op) ? raw.op : [],
+      tp: Array.isArray(raw.tp) ? raw.tp : [],
+      ep: Array.isArray(raw.ep) ? raw.ep : [],
+      evaluation, evaluatedAt, ...meta,
+    };
+  }
+  // freeform（既存実装データは format フィールドなし）
+  return {
+    no, date, format: "freeform",
+    issue: raw.issue ?? "",
+    evaluation, evaluatedAt, ...meta,
+  };
+}
+
+/** camelCase → DBの snake_case JSONB へ変換 */
+function issueToRow(issue: NursingCarePlanIssue): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    no: issue.no,
+    date: issue.date ?? null,
+    evaluation: issue.evaluation ?? null,
+    evaluated_at: issue.evaluatedAt ?? null,
+    ai_generated: issue.aiGenerated ?? false,
+    ai_model: issue.aiModel ?? null,
+    ai_generated_at: issue.aiGeneratedAt ?? null,
+    imported: issue.imported ?? false,
+    imported_at: issue.importedAt ?? null,
+  };
+  if (issue.format === "nanda") {
+    return {
+      ...base,
+      format: "nanda",
+      diagnosis_label: issue.diagnosisLabel,
+      op: issue.op,
+      tp: issue.tp,
+      ep: issue.ep,
+    };
+  }
+  return {
+    ...base,
+    format: "freeform",
+    issue: issue.issue,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function nursingCarePlanFromRow(row: any): NursingCarePlan {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawIssues: any[] = Array.isArray(row.issues) ? row.issues : [];
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    planDate: row.plan_date,
+    planType: (row.plan_type ?? "介護") as NursingCarePlanType,
+    planTitle: (row.plan_title ?? "共通") as NursingCarePlanTitle,
+    isDraft: row.is_draft ?? true,
+    issueFormat: (row.issue_format ?? "nanda") as NursingCareIssueFormat,
+    authorName: row.author_name ?? undefined,
+    authorTitle: row.author_title ?? undefined,
+    author2Name: row.author2_name ?? undefined,
+    author2Title: row.author2_title ?? undefined,
+    nursingGoal: row.nursing_goal ?? undefined,
+    issues: rawIssues.map((raw, i) => issueFromRow(raw, i)),
+    hasSupplies: row.has_supplies ?? false,
+    supplyProcedure: row.supply_procedure ?? undefined,
+    supplyMaterials: row.supply_materials ?? undefined,
+    supplyQuantity: row.supply_quantity ?? undefined,
+    remarks: row.remarks ?? undefined,
+    conferenceMemo: row.conference_memo ?? undefined,
+    aiModel: row.ai_model ?? undefined,
+    aiPromptVersion: row.ai_prompt_version ?? undefined,
+    aiGeneratedAt: row.ai_generated_at ?? undefined,
+  };
+}
+
+/** 患者の看護計画書一覧（新しい順） */
+export async function getNursingCarePlans(patientId: string): Promise<NursingCarePlan[]> {
+  const { data, error } = await getSupabase()
+    .from("nursing_care_plans")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("plan_date", { ascending: false });
+
+  if (error) {
+    console.error("getNursingCarePlans error:", error);
+    return [];
+  }
+  return (data ?? []).map(nursingCarePlanFromRow);
+}
+
+/** 単一の看護計画書を取得 */
+export async function getNursingCarePlan(id: string): Promise<NursingCarePlan | null> {
+  const { data, error } = await getSupabase()
+    .from("nursing_care_plans")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getNursingCarePlan error:", error);
+    return null;
+  }
+  return data ? nursingCarePlanFromRow(data) : null;
+}
+
+/**
+ * 「現在有効な看護計画書」を取得。
+ * is_draft=false の中で plan_date が最新のもの。
+ * SOAP生成時の最優先コンテキストとして使う。
+ */
+export async function getActiveNursingCarePlan(patientId: string): Promise<NursingCarePlan | null> {
+  const { data, error } = await getSupabase()
+    .from("nursing_care_plans")
+    .select("*")
+    .eq("patient_id", patientId)
+    .eq("is_draft", false)
+    .order("plan_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getActiveNursingCarePlan error:", error);
+    return null;
+  }
+  return data ? nursingCarePlanFromRow(data) : null;
+}
+
+/** 新規作成（id未指定）または更新（id指定） */
+export async function saveNursingCarePlan(
+  plan: Omit<NursingCarePlan, "id" | "createdAt" | "updatedAt"> & { id?: string }
+): Promise<NursingCarePlan | null> {
+  const userId = await getCurrentUserId();
+
+  const row = {
+    ...(plan.id ? { id: plan.id } : {}),
+    patient_id: plan.patientId,
+    plan_date: plan.planDate,
+    plan_type: plan.planType,
+    plan_title: plan.planTitle,
+    is_draft: plan.isDraft,
+    issue_format: plan.issueFormat ?? "nanda",
+    author_name: plan.authorName ?? null,
+    author_title: plan.authorTitle ?? null,
+    author2_name: plan.author2Name ?? null,
+    author2_title: plan.author2Title ?? null,
+    nursing_goal: plan.nursingGoal ?? null,
+    issues: (plan.issues ?? []).map(issueToRow),
+    has_supplies: plan.hasSupplies,
+    supply_procedure: plan.supplyProcedure ?? null,
+    supply_materials: plan.supplyMaterials ?? null,
+    supply_quantity: plan.supplyQuantity ?? null,
+    remarks: plan.remarks ?? null,
+    conference_memo: plan.conferenceMemo ?? null,
+    ai_model: plan.aiModel ?? null,
+    ai_prompt_version: plan.aiPromptVersion ?? null,
+    ai_generated_at: plan.aiGeneratedAt ?? null,
+    user_id: userId,
+    ...(plan.id ? {} : { created_by: userId }),
+  };
+
+  const { data, error } = await getSupabase()
+    .from("nursing_care_plans")
+    .upsert(row)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("saveNursingCarePlan error:", error);
+    return null;
+  }
+  return nursingCarePlanFromRow(data);
+}
+
+/** 削除 */
+export async function deleteNursingCarePlan(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("nursing_care_plans")
+    .delete()
+    .eq("id", id);
+  if (error) console.error("deleteNursingCarePlan error:", error);
+}
+
 // ---- localStorageからの自動移行 ----
 
 const MIGRATION_KEY = "kango_migrated_to_supabase";

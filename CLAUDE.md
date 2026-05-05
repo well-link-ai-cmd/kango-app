@@ -1,6 +1,33 @@
 # kango-app — AI訪問看護記録アシスト
 
-## 引き継ぎ（最終更新: 2026-04-27 SOAP Phase B 完了）
+## 引き継ぎ（最終更新: 2026-05-05 看護計画書 Phase 8 完了・master投入準備中）
+
+### 完了（2026-05-05 — 看護計画書 Phase 8）
+
+#### NANDA形式の2段階AI生成・議事録対応・統合textareaUI
+- migration 007: `issue_format` ('nanda'|'freeform') カラム追加、`conference_memo` カラム追加（Supabase本番実行済）
+- storage.ts: `NursingCarePlanIssue` を Discriminated Union 化（NANDA / freeform）
+  - メタ情報（aiGenerated/aiModel/imported/importedAt）追加
+  - `issueToBodyText` / `parseBodyText` ヘルパー（OP/TP/EP整形と自由テキスト→構造化のパース）
+- 新規API `/nursing-care-plan/suggest-labels`（Sonnet 4.6）：
+  議事録+直近1ヶ月SOAP+active_planから課題ラベル候補MAX5提示・rationale必須・継続課題判定
+- 新規API `/nursing-care-plan/generate-issues`（Sonnet 4.6）：
+  選択ラベル群→OP/TP/EP+統合nursing_goal一括生成・既実施ケアと重複許容明記
+- 既存 `/nursing-care-plan/generate` `/evaluate` を Sonnet 4.6 昇格（v1.1.0）
+- `app/api/soap/route.ts` `questions/route.ts`: 看護計画書 issues 注入を NANDA/freeform 両対応（NANDA時は OP/TP/EP 構造化注入）
+- NursingCarePlanForm.tsx UI 改修：
+  - 課題の記述形式（NANDA/freeform）切替
+  - 議事録入力（任意・推奨）
+  - NANDAフロー Step 1（候補提示）→ Step 2（一括生成）の2段階UI
+  - 課題1件は「ラベル(input) + 内容(大textarea)」の統合UI（カイポケコピペしやすさ優先）
+  - 編集中は parseBodyText で構造化保存、表示は issueToBodyText で整形
+  - コピペ取り込み（AI整形なし、imported メタ付き freeform issue）
+- preview E2E 動作確認済（NANDAフロー / コピペ / 評価 / 保存）
+
+#### Phase 8 完了状態
+- ブランチ: `feat/nursing-care-plan`（PR #6 draft 状態のまま）
+- 直近 commit: 7fb29df（NANDA UI統合textarea）
+- 残タスク: master マージ準備中（このセッションで rebase/merge）
 
 ### 完了（2026-04-27）
 
