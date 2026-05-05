@@ -65,27 +65,13 @@ export async function POST(req: NextRequest) {
 
   const tool = {
     name: "generate_nursing_care_issues",
-    description:
-      "選択された課題ラベル群に対し、看護目標と各課題の OP/TP/EP を一括生成する。labels と同じ順序・件数で issues を返すこと。",
+    description: "選択された課題ラベル群に対し、看護目標と各課題の OP/TP/EP を一括生成する。",
     input_schema: {
       type: "object" as const,
       properties: {
-        extracted_facts: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "入力（議事録・SOAP・active_plan・ケア内容・旧carePlan・患者情報）から抽出した事実。由来タグ [議事録] [SOAP] [active_plan] [ケア内容] [旧carePlan] [患者情報] を付ける。誤変換補正済み。",
-        },
-        coverage_check: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "各事実を nursing_goal / 各 issue の OP/TP/EP のどこに反映するかの1行マッピング。",
-        },
         nursing_goal: {
           type: "string",
-          description:
-            "看護・リハビリの目標（3000字以内、自然な文章）。患者の状態・選択された課題群を統合した上位目標。『〜を目標とする』『〜を目指す』『〜を継続していく』の語尾。末尾に『※AI下書き。看護師確認必須』を付与。",
+          description: "看護・リハビリの目標（500〜800字）。選択課題群を統合した上位目標。語尾は『〜を目標とする』『〜を目指す』『〜を継続していく』。末尾に『※AI下書き。看護師確認必須』を付与。",
         },
         issues: {
           type: "array",
@@ -99,37 +85,33 @@ export async function POST(req: NextRequest) {
               op: {
                 type: "array",
                 items: { type: "string" },
-                description:
-                  "観察計画（O-P）。3〜7項目。各項目は1行40〜80字程度。数値・頻度・条件を含める（『血圧130/80以上で再評価』『毎訪問時測定』等）。",
+                description: "観察計画。3〜5項目。各40〜60字。数値・頻度・条件を含める。",
               },
               tp: {
                 type: "array",
                 items: { type: "string" },
-                description:
-                  "ケア計画（T-P）。3〜7項目。実際に訪問看護で実施できる範囲。医師指示が必要な侵襲的処置は提案しない。",
+                description: "ケア計画。3〜5項目。訪問看護で実施可能な範囲。",
               },
               ep: {
                 type: "array",
                 items: { type: "string" },
-                description:
-                  "指導計画（E-P）。2〜5項目。本人・家族への指導内容。具体的に書く（『〜の方法を本人・家族に説明』）。",
+                description: "指導計画。2〜4項目。本人・家族への具体的指導内容。",
               },
             },
             required: ["diagnosis_label", "op", "tp", "ep"],
           },
-          description:
-            "各課題の OP/TP/EP（labels と同じ順序・件数で返す）。冗長にしない。",
+          description: "各課題の OP/TP/EP（labels と同じ順序・件数）。冗長にしない。",
         },
       },
-      required: ["extracted_facts", "coverage_check", "nursing_goal", "issues"],
+      required: ["nursing_goal", "issues"],
     },
   };
 
   try {
     const response = await generateAiResponse(userPrompt, systemPrompt, {
       model: "sonnet",
-      maxTokens: 8192,
-      timeoutMs: 180000,  // Sonnet 4.6 構造化出力（複数課題のOP/TP/EP生成）に時間がかかるため 180秒
+      maxTokens: 4096,
+      timeoutMs: 120000,
       temperature: 0.2,
       tool,
     });

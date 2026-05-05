@@ -71,27 +71,13 @@ export async function POST(req: NextRequest) {
 
   const generateTool = {
     name: "output_nursing_care_plan",
-    description:
-      "看護計画書の目標・課題を生成する。必ず extracted_facts → coverage_check → nursing_goal / issues の順で埋めること。",
+    description: "看護計画書の目標・課題（freeformテキスト）を生成する。",
     input_schema: {
       type: "object" as const,
       properties: {
-        extracted_facts: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "入力（患者情報・SOAP記録・ケア内容・旧carePlan・前回計画書）から抽出した事実を列挙。由来タグ [患者情報] [SOAP] [ケア内容] [旧carePlan] [前回計画] を付けること。誤変換補正済みの用語で書く。内部確認用。",
-        },
-        coverage_check: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "各事実を nursing_goal / issues のどこに反映するかの1行マッピング。内部確認用。",
-        },
         nursing_goal: {
           type: "string",
-          description:
-            "看護・リハビリの目標（3000字以内、自然な文章）。患者の状態・ケア内容・SOAPから妥当な目標を記述。『〜を目標とする』『〜を目指す』の語尾。末尾に『※AI下書き。看護師確認必須』を付与。",
+          description: "看護・リハビリの目標（500〜800字、自然な文章）。語尾は『〜を目標とする』『〜を目指す』。末尾に『※AI下書き。看護師確認必須』を付与。",
         },
         issues: {
           type: "array",
@@ -101,30 +87,27 @@ export async function POST(req: NextRequest) {
               no: { type: "integer", description: "行番号（1から開始）" },
               issue: {
                 type: "string",
-                description:
-                  "課題・支援内容（2500字以内）。SOAPから抽出した課題と、それに対する支援内容を記述。『〜の課題あり。〜の支援を行う』等。",
+                description: "課題・支援内容（300〜500字）。『〜の課題あり。〜の支援を行う』形式。",
               },
             },
             required: ["no", "issue"],
           },
-          description:
-            "療養上の課題・支援内容（最大5行）。SOAPやケア内容から抽出した主要課題を優先順位順に並べる。evaluation（評価）は生成しない（別API で期間SOAPから後日生成）。",
+          description: "療養上の課題・支援内容（最大5行）。優先順位順。",
         },
         remarks: {
           type: "string",
-          description:
-            "備考（任意・3000字以内）。特記事項があれば記載。なければ空文字列で可。",
+          description: "備考（任意・200字以内）。なければ空文字列。",
         },
       },
-      required: ["extracted_facts", "coverage_check", "nursing_goal", "issues", "remarks"],
+      required: ["nursing_goal", "issues", "remarks"],
     },
   };
 
   try {
     const response = await generateAiResponse(userPrompt, systemPrompt, {
       model: "sonnet",
-      maxTokens: 8192,
-      timeoutMs: 180000,  // Sonnet 4.6 構造化出力（看護目標+課題複数件）に時間がかかるため 180秒
+      maxTokens: 4096,
+      timeoutMs: 120000,
       temperature: 0.2,
       tool: generateTool,
     });

@@ -66,12 +66,6 @@ export async function POST(req: NextRequest) {
     input_schema: {
       type: "object" as const,
       properties: {
-        extracted_facts: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "入力（議事録・SOAP・患者情報・active_plan・旧carePlan）から抽出した事実。由来タグ [議事録] [SOAP] [患者情報] [active_plan] [旧carePlan] を付ける。誤変換補正済み。",
-        },
         candidates: {
           type: "array",
           maxItems: MAX_LABELS,
@@ -80,38 +74,36 @@ export async function POST(req: NextRequest) {
             properties: {
               label: {
                 type: "string",
-                description:
-                  "課題ラベル。NANDA公式診断名にこだわらず、自院/事業所の現場慣習に近い言い回しで書く。例：『不安感増強に伴う日常生活への支障リスク』『転倒リスク』『服薬管理困難』",
+                description: "課題ラベル。自院/事業所の現場慣習に近い言い回し。例：『不安感増強に伴う日常生活への支障リスク』『転倒リスク』",
               },
               rationale: {
                 type: "string",
-                description:
-                  "そのラベルを提案した根拠。議事録/SOAP/旧計画書の具体的な記述を1〜2文で引用または要約する。",
+                description: "根拠（1〜2文・100字以内）。議事録/SOAP/旧計画書のどの記述から導いたか。",
               },
               priority: {
                 type: "string",
                 enum: ["high", "medium", "low"],
-                description: "優先度。生命・機能の課題を high、生活機能/予防系を medium、その他を low",
+                description: "優先度。生命・機能=high、生活機能/予防=medium、その他=low",
               },
               is_continuation: {
                 type: "boolean",
-                description: "active_plan に同等の課題がある場合 true（継続課題）。新規課題は false",
+                description: "active_plan に同等の課題がある場合 true（継続）。新規は false",
               },
             },
             required: ["label", "rationale", "priority", "is_continuation"],
           },
-          description: `課題ラベル候補（最大${MAX_LABELS}件）。情報が乏しい場合は2〜3件でもOK。無理に5件埋めない。`,
+          description: `課題ラベル候補（最大${MAX_LABELS}件）。情報が乏しい場合は2〜3件でも可。無理に5件埋めない。`,
         },
       },
-      required: ["extracted_facts", "candidates"],
+      required: ["candidates"],
     },
   };
 
   try {
     const response = await generateAiResponse(userPrompt, systemPrompt, {
       model: "sonnet",
-      maxTokens: 4096,
-      timeoutMs: 60000,
+      maxTokens: 2048,
+      timeoutMs: 90000,
       temperature: 0.2,
       tool,
     });

@@ -85,23 +85,10 @@ export async function POST(req: NextRequest) {
 
   const evaluateTool = {
     name: "output_issue_evaluations",
-    description:
-      "各課題について、期間内SOAPから経過・変化・所見下書きを生成する。必ず extracted_facts → per_issue_coverage → evaluations の順で埋めること。",
+    description: "各課題について、期間SOAPから簡潔な評価ドラフトを生成する。",
     input_schema: {
       type: "object" as const,
       properties: {
-        extracted_facts: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "期間内SOAPから抽出した事実。由来タグ [日付-S] [日付-O] [日付-A] [日付-P] を付ける。誤変換補正済み。内部確認用。",
-        },
-        per_issue_coverage: {
-          type: "array",
-          items: { type: "string" },
-          description:
-            "各課題ごとに、関連する事実を列挙したマッピング。例：『課題#1:〇〇 → [4/1-O] [4/8-A] [4/15-P]』。内部確認用。",
-        },
         evaluations: {
           type: "array",
           items: {
@@ -110,35 +97,31 @@ export async function POST(req: NextRequest) {
               no: { type: "integer", description: "課題の行番号（入力と同じ）" },
               course_summary: {
                 type: "string",
-                description:
-                  "期間内の経過サマリ（1000字以内）。いつ何が起きたかを時系列で整理。",
+                description: "期間内の経過サマリ（300字程度）。日付を入れて時系列で簡潔に。",
               },
               change_points: {
                 type: "string",
-                description:
-                  "変化のポイント（500字以内）。期間開始時と終了時の状態変化、ADL/症状/バイタル傾向の変化。",
+                description: "変化のポイント（200字程度）。期間開始/終了の対比。",
               },
               finding_draft: {
                 type: "string",
-                description:
-                  "所見下書き（500字以内）。『継続』『改善傾向』『悪化傾向』『達成傾向が見られる』『見直しの余地あり』等の観察表現を、根拠とともに提示。『目標達成』『中止』の認定語は看護師判断のため使わない。末尾に『※AI下書き。最終判定は看護師確認必須』を付与。",
+                description: "所見下書き（200字程度）。『継続』『改善傾向』『悪化傾向』『見直しの余地あり』等の観察表現を根拠とともに。『目標達成』『中止』禁止。",
               },
             },
             required: ["no", "course_summary", "change_points", "finding_draft"],
           },
-          description:
-            "課題ごとの評価。入力の issues 配列と同じ順序・件数で返すこと。",
+          description: "課題ごとの評価。入力 issues と同じ順序・件数。",
         },
       },
-      required: ["extracted_facts", "per_issue_coverage", "evaluations"],
+      required: ["evaluations"],
     },
   };
 
   try {
     const response = await generateAiResponse(userPrompt, systemPrompt, {
       model: "sonnet",
-      maxTokens: 8192,
-      timeoutMs: 180000,  // Sonnet 4.6 で複数課題評価時、構造化出力に時間がかかるため 180秒
+      maxTokens: 4096,
+      timeoutMs: 120000,
       temperature: 0.2,
       tool: evaluateTool,
     });
@@ -197,74 +180,36 @@ function appendAiNotice(text: string): string {
 }
 
 function buildSystemPrompt(): string {
-  return `あなたは訪問看護の看護計画書の評価欄を作成する専門AIである。指定期間内のSOAP記録を読み取り、各課題について「経過サマリ・変化のポイント・所見下書き」の3構造で評価ドラフトを生成する。
+  return `あなたは訪問看護の看護計画書の評価欄を作成する専門AIである。指定期間SOAPから各課題について簡潔な評価ドラフトを生成する。
 
-# 作業手順（必ず順番に実行）
-1. extracted_facts：期間内SOAPから事実を抽出（由来タグ [日付-S/O/A/P] 付き、誤変換補正済み）
-2. per_issue_coverage：各課題について、関連する事実をマッピング
-3. evaluations：課題ごとに3構造（course_summary / change_points / finding_draft）で評価を記述
+# 出力ルール
+- evaluations は入力 issues と同じ順序・同じ件数
+- 各フィールドは指定字数を厳守し、簡潔に書く
+- 出力は Tool use の JSON のみ（前置き不要）
 
-# 出力形式
-Tool use（output_issue_evaluations）のJSONのみ。前置き・説明は不要。
-evaluations は入力の issues 配列と**同じ順序・同じ件数**で返すこと。
+# 各フィールドの書き方
+- course_summary（300字程度）：時系列で簡潔に。日付明記（「4/1〜」「4/15時点で〜」）。該当課題に関連する事象のみ。
+- change_points（200字程度）：期間開始/終了の対比。「〜から〜へ変化」形式。変化なしなら「大きな変化なし」で可。
+- finding_draft（200字程度）：「継続」「改善傾向」「悪化傾向」「達成傾向が見られる」「見直しの余地あり」を根拠1〜2点で。語尾は「〜と考えられる」「〜傾向が見られる」。
 
-# あなたがやらないこと（AI責任分界：違反厳禁）
-- 医学的な最終判定を断定しない
-  - 禁止表現：「改善した」「悪化した」「治癒した」「効果があった」（断定）
-  - 代わりに：「改善傾向と考えられる」「悪化傾向が見られる」「継続観察が必要」（下書き）
-- DESIGN-R、Barthel、GAF、自立度ランクの点数判定・変更
-- 診断名の変更・新規付与
-- 薬剤の処方・変更・中止の提案（医師権限）
-- ドレッシング材・外用薬の商品名・成分名の言及
-- 具体的検査値の創作（記録にあるもののみ引用）
+# 禁止事項
+- 断定表現：「改善した」「悪化した」「治癒した」「効果があった」 → 「〜傾向と考えられる」に置き換え
+- 認定語：「目標達成」「中止」「中止検討」（看護師判断領域）
+- DESIGN-R / Barthel / GAF / 自立度の点数判定
+- 診断名変更、薬剤の処方/変更/中止の提案（医師権限）
+- ドレッシング材・薬剤の商品名・成分名
+- SOAPにない情報の創作
 
-# 医療用語の正しい表記（誤変換補正・全段階で徹底）
-- 副雑音（× 複雑音）
-- 緊満感（× 緊満・緊張感）
-- 更衣（× 交衣・交依・好意）
-- 洗髪（× 先発）
-- 著明（× 著名）
-- 褥瘡（× 辱層）
-- 浮腫（× 不種）
-- 嚥下（× 円下）
-- 疼痛（× 等痛）
-- 腸蠕動音（× 朝蠕動音）
-- 腹部（× 服部）
-- 排便（× 配便）
-- 関節（× 間接・関接、可動域・拘縮・リウマチ等の文脈では必ず関節）
-- 仰臥位（× 仰が位）
+# 医療用語の補正
+副雑音(×複雑音) / 緊満感(×緊張感) / 更衣(×交衣) / 洗髪(×先発) / 著明(×著名) / 褥瘡(×辱層) / 浮腫(×不種) / 嚥下(×円下) / 疼痛(×等痛) / 腸蠕動音(×朝蠕動音) / 腹部(×服部) / 排便(×配便) / 関節(×間接) / 仰臥位(×仰が位)
 
-# course_summary（経過サマリ）の書き方
-- 1000字以内
-- 期間内の出来事を**時系列順**で整理
-- 日付を明記：「4/1の訪問では〜。4/8には〜。4/15時点で〜。」
-- 該当課題に関連する事象のみ記述（他の課題の話を混ぜない）
-- SOAPにない情報を創作しない
-
-# change_points（変化のポイント）の書き方
-- 500字以内
-- 期間開始時と終了時の状態を対比
-- ADL / 症状 / バイタル / 服薬 / 家族支援 の観点から変化を拾う
-- 「〜だった状態から、〜へ変化している」形式
-- 変化がなければ「大きな変化は見られない」で可
-
-# finding_draft（所見下書き）の書き方
-- 500字以内
-- 候補文言：「継続」「改善傾向」「悪化傾向」「達成傾向が見られる」「見直しの余地あり」
-- 禁止語：「目標達成」「中止」「中止検討」等の認定語（最終的な達成認定・支援中止の判断は看護師・主治医）
-- 根拠となる期間内の事実を1〜2点挙げる
-- 断定せず「〜と考えられる」「〜傾向が見られる」「〜の余地がある」の語尾
-- 末尾に「※AI下書き。最終判定は看護師確認必須」を付与（Tool schemaレベルで自動付与されるため、本文内では省略可）
-
-# 期間内に該当課題への言及が乏しい場合
-- course_summary：「本期間のSOAPに該当課題への直接的言及は限定的。〜の記録のみ確認」等
-- change_points：「大きな変化を追跡できる情報が限定的」
-- finding_draft：「期間内SOAPからは該当課題の経過を十分に追跡できず、継続観察と記録の充実が必要と考えられる」等、下書き表現で書く
+# 言及が乏しい場合
+「該当課題への直接的言及は限定的」「継続観察と記録の充実が必要と考えられる」等の下書き表現で書く。
 
 # 個人情報
-- 利用者の氏名・住所・電話番号・「〜様」を含めない
-- 「利用者」「本人」の表現を使う`;
+氏名・住所・電話番号・「〜様」は出力しない。「利用者」「本人」を使用。`;
 }
+
 
 function buildUserPrompt(input: NursingCarePlanEvaluateInput): string {
   const { patient, issues, periodStart, periodEnd, periodSoapRecords, nursingContentItems } = input;
