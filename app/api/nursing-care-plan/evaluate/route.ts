@@ -20,8 +20,8 @@ import { getAuthUser } from "@/lib/supabase-server";
  * プロンプトバージョン: v1.0.0 (2026-04-22)
  */
 
-const PROMPT_VERSION = "nursing-care-plan-evaluate-v1.1.0";  // v1.1.0: Sonnet 4.6 昇格
-const AI_MODEL = "claude-sonnet-4-6";
+const PROMPT_VERSION = "nursing-care-plan-evaluate-v1.2.0";  // v1.2.0: Haiku 4.5 降格（要約系のためHaikuで十分）
+const AI_MODEL = "claude-haiku-4-5-20251001";
 
 // Vercel Functions の実行時間上限（Sonnet 4.6 で複数課題評価のため長めに確保）
 export const maxDuration = 300;
@@ -111,9 +111,9 @@ export async function POST(req: NextRequest) {
 
   try {
     const response = await generateAiResponse(userPrompt, systemPrompt, {
-      model: "sonnet",
+      model: "haiku",
       maxTokens: 4096,
-      timeoutMs: 120000,
+      timeoutMs: 60000,
       temperature: 0.2,
       tool: evaluateTool,
     });
