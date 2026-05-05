@@ -1,8 +1,35 @@
 # kango-app — AI訪問看護記録アシスト
 
-## 引き継ぎ（最終更新: 2026-05-05 看護計画書 Phase 8 完了・master投入準備中）
+## 引き継ぎ（最終更新: 2026-05-05 Phase 8 完了・master 投入済・コスト最適化済）
 
-### 完了（2026-05-05 — 看護計画書 Phase 8）
+### 次フェーズ（最優先・別チャット推奨）
+1. **月次報告書（通常・精神科）の実装**：`docs/報告書3様式_手順書.md` 参照、Haiku 4.5（要約系）で実装
+2. **情報提供書（4宛先トーン変換）の実装**：同手順書、Haiku 4.5
+3. **褥瘡計画書 写真登録機能**：`memory/project_pressure_ulcer_photo.md` 参照、月次報告書実装後
+4. 実運用フィードバック収集：SOAP生成・看護計画書・評価の品質チェック
+
+### モデル戦略（2026-05-05 確定）
+| 用途 | モデル | 根拠 |
+|---|---|---|
+| **創造系**（推論・新規生成） | Sonnet 4.6 | suggest-labels（議事録→課題推論）、generate-issues（OP/TP/EP創造） |
+| **要約・整形系** | Haiku 4.5 | SOAP生成・alerts・看護計画 評価・褥瘡計画書・ケア内容refine、月次報告書（予定）、情報提供書（予定） |
+
+**重要**: 評価系（要約・整形）は Haiku で品質十分（褥瘡計画書・看護計画書評価で実証済み）。
+月次報告書・情報提供書も Haiku 路線で実装する方針確定。
+
+### Prompt Caching の TTL 仕様（重要メモ）
+- デフォルト: 5分TTL
+- 拡張オプション: **1時間 TTL**（料金は通常キャッシュ書き込みの2倍だが、ヒット率が大幅向上）
+- 将来 Caching 試算時は 1時間 TTL 想定でヒット率 80%以上で計算する
+- 現在は単独利用のため未導入。複数スタッフ利用開始時に着手
+
+### 完了（2026-05-05 — 看護計画書 Phase 8 + 周辺最適化）
+
+#### マージ済み
+- PR #6 → master squash merge（commit b02ead9）
+- 後続：questions廃止（commit e6a106b）、evaluate Haiku降格（commit 12f1133）
+
+#### NANDA形式の2段階AI生成・議事録対応・統合textareaUI
 
 #### NANDA形式の2段階AI生成・議事録対応・統合textareaUI
 - migration 007: `issue_format` ('nanda'|'freeform') カラム追加、`conference_memo` カラム追加（Supabase本番実行済）
@@ -24,10 +51,24 @@
   - コピペ取り込み（AI整形なし、imported メタ付き freeform issue）
 - preview E2E 動作確認済（NANDAフロー / コピペ / 評価 / 保存）
 
-#### Phase 8 完了状態
-- ブランチ: `feat/nursing-care-plan`（PR #6 draft 状態のまま）
-- 直近 commit: 7fb29df（NANDA UI統合textarea）
-- 残タスク: master マージ準備中（このセッションで rebase/merge）
+#### Phase 8.1 — 周辺最適化
+- **questions API 廃止 → alerts のみに集約**（commit e6a106b）
+  - 「もう少し詳しく書けますか」系の掘り下げは実運用で意味なかったため
+  - output トークン削減（約47%）、看護師UX改善
+- **evaluate API を Haiku 4.5 に降格**（commit 12f1133）
+  - 期間SOAP→評価ドラフトは要約・整形作業のため Haiku で十分（実機検証済み）
+  - 1課題コスト ¥10 → ¥2（80%削減）
+- **evaluate 出力を自由文1ブロックに変更**（カイポケ・iBow両対応）
+  - 3ブロック構造（経過/変化/所見）→ 1ブロック自然文
+  - 末尾は体言止め/丁寧語の両方許容（実評価サンプル分析より）
+  - 「【R元号年月日看護師評価】」プレフィックス自動付与
+- **Sonnet 4.6 ルートに `maxDuration = 300` 設定**（Vercel関数の実行時間上限引き上げ）
+- **suggest-labels / generate-issues / generate / evaluate の出力字数圧縮**
+  - extracted_facts / coverage_check 等の自己チェックフィールド削除
+  - 各フィールドの目安字数を半減〜1/3に圧縮
+  - 生成時間を90秒タイムアウト → 5〜15秒に改善
+
+#### Phase 8 — NANDA形式の2段階AI生成・議事録対応・統合textareaUI
 
 ### 完了（2026-04-27）
 
