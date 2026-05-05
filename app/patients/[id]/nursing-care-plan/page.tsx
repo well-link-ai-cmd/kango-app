@@ -12,6 +12,7 @@ import {
   getPatients,
   getNursingCarePlans,
   deleteNursingCarePlan,
+  issueToDisplayText,
   type Patient,
   type NursingCarePlan,
 } from "@/lib/storage";
@@ -258,7 +259,7 @@ export default function NursingCarePlanListPage() {
                                     No.{iss.no} {iss.date && `(${iss.date})`}
                                   </span>
                                   <button
-                                    onClick={() => handleCopy(`${plan.id}-issue-${iss.no}`, iss.issue)}
+                                    onClick={() => handleCopy(`${plan.id}-issue-${iss.no}`, issueToDisplayText(iss))}
                                     className={`btn-copy ${copiedKey === `${plan.id}-issue-${iss.no}` ? "btn-copy-success" : ""}`}
                                   >
                                     <Copy size={12} />
@@ -266,7 +267,7 @@ export default function NursingCarePlanListPage() {
                                   </button>
                                 </div>
                                 <p className="text-sm whitespace-pre-wrap" style={{ color: "var(--text-primary)" }}>
-                                  {iss.issue}
+                                  {issueToDisplayText(iss)}
                                 </p>
                                 {iss.evaluation?.trim() && (
                                   <div className="mt-2 pt-2" style={{ borderTop: "1px dashed rgba(0,0,0,0.1)" }}>

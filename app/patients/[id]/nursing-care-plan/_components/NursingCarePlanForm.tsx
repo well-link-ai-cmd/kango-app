@@ -19,9 +19,18 @@ import {
   type NursingCarePlanType,
   type NursingCarePlanTitle,
   type NursingCarePlanIssue,
+  type NursingCareIssueFreeform,
   type Patient,
   type SoapRecord,
 } from "@/lib/storage";
+
+/** 既存（Phase 1-7）UIは freeform 専用。Step 5 で NANDA UI を追加予定。 */
+function isFreeformIssue(iss: NursingCarePlanIssue): iss is NursingCareIssueFreeform {
+  return iss.format !== "nanda";
+}
+function readIssueText(iss: NursingCarePlanIssue): string {
+  return isFreeformIssue(iss) ? iss.issue : "";
+}
 import {
   Sparkles,
   Save,
@@ -148,11 +157,18 @@ export default function NursingCarePlanForm({
 
   function handleAddIssue() {
     const nextNo = issues.length > 0 ? Math.max(...issues.map((i) => i.no)) + 1 : 1;
-    setIssues([...issues, { no: nextNo, date: planDate, issue: "", evaluation: "" }]);
+    setIssues([
+      ...issues,
+      { no: nextNo, date: planDate, format: "freeform", issue: "", evaluation: "" },
+    ]);
   }
 
-  function handleUpdateIssue(idx: number, patch: Partial<NursingCarePlanIssue>) {
-    setIssues(issues.map((iss, i) => (i === idx ? { ...iss, ...patch } : iss)));
+  function handleUpdateIssue(idx: number, patch: Partial<NursingCareIssueFreeform>) {
+    setIssues(
+      issues.map((iss, i) =>
+        i === idx ? ({ ...iss, ...patch } as NursingCarePlanIssue) : iss
+      )
+    );
   }
 
   function handleRemoveIssue(idx: number) {
@@ -185,7 +201,7 @@ export default function NursingCarePlanForm({
           })),
           mode: aiMode,
           existingGoal: aiMode === "refine" ? nursingGoal : undefined,
-          existingIssues: aiMode === "refine" ? issues.map((i) => ({ no: i.no, issue: i.issue })) : undefined,
+          existingIssues: aiMode === "refine" ? issues.map((i) => ({ no: i.no, issue: readIssueText(i) })) : undefined,
         }),
       });
       const data = await res.json();
@@ -199,10 +215,11 @@ export default function NursingCarePlanForm({
           return {
             no: i.no,
             date: i.date ?? planDate,
+            format: "freeform",
             issue: i.issue,
             evaluation: existing?.evaluation ?? "",
             evaluatedAt: existing?.evaluatedAt,
-          };
+          } satisfies NursingCareIssueFreeform;
         }
       );
       setIssues(newIssues);
@@ -239,7 +256,7 @@ export default function NursingCarePlanForm({
       setEvalError("評価対象の課題がありません。先に課題を登録してください。");
       return;
     }
-    const nonEmptyIssues = issues.filter((i) => i.issue.trim());
+    const nonEmptyIssues = issues.filter((i) => readIssueText(i).trim());
     if (nonEmptyIssues.length === 0) {
       setEvalError("課題内容が空です。先に課題を記入してください。");
       return;
@@ -267,7 +284,7 @@ export default function NursingCarePlanForm({
             diagnosis: patient.diagnosis,
             careLevel: patient.careLevel,
           },
-          issues: nonEmptyIssues.map((i) => ({ no: i.no, issue: i.issue })),
+          issues: nonEmptyIssues.map((i) => ({ no: i.no, issue: readIssueText(i) })),
           periodStart: start,
           periodEnd: end,
           periodSoapRecords: periodRecords.map((r) => ({
@@ -314,6 +331,7 @@ export default function NursingCarePlanForm({
         planType,
         planTitle,
         isDraft: saveAsDraft,
+        issueFormat: initialPlan?.issueFormat ?? "freeform",  // Phase 1-7 互換: 既存は freeform 扱い
         authorName: authorName.trim() || undefined,
         authorTitle: authorTitle.trim() || undefined,
         author2Name: author2Name.trim() || undefined,
@@ -573,19 +591,19 @@ export default function NursingCarePlanForm({
                     maxLength={2500}
                     className="input-field text-sm"
                     style={{ resize: "vertical" }}
-                    value={iss.issue}
+                    value={readIssueText(iss)}
                     onChange={(e) => handleUpdateIssue(idx, { issue: e.target.value })}
                   />
                   <div className="flex items-center justify-between text-xs" style={{ color: "var(--text-muted)" }}>
                     <button
-                      onClick={() => handleCopy(`issue-${idx}`, iss.issue)}
+                      onClick={() => handleCopy(`issue-${idx}`, readIssueText(iss))}
                       className={`btn-copy ${copiedKey === `issue-${idx}` ? "btn-copy-success" : ""}`}
-                      disabled={!iss.issue.trim()}
+                      disabled={!readIssueText(iss).trim()}
                     >
                       <Copy size={12} />
                       {copiedKey === `issue-${idx}` ? "コピー済！" : "コピー"}
                     </button>
-                    <span>{iss.issue.length} / 2500字</span>
+                    <span>{readIssueText(iss).length} / 2500字</span>
                   </div>
                 </div>
 

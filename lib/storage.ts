@@ -819,14 +819,78 @@ export async function deletePressureUlcerPlan(id: string): Promise<void> {
 
 export type NursingCarePlanType = "介護" | "医療";
 export type NursingCarePlanTitle = "共通" | "看護" | "リハ";
+/**
+ * 課題の記述形式
+ * - 'nanda':    課題ラベル + OP/TP/EP の構造化
+ * - 'freeform': 自由文1ブロック（既存互換 + コピペ取り込み）
+ */
+export type NursingCareIssueFormat = "nanda" | "freeform";
 
-/** 療養上の課題・支援内容 1行分 */
-export interface NursingCarePlanIssue {
-  no: number;                  // 行番号
-  date?: string;               // 記入日 YYYY-MM-DD
-  issue: string;               // 課題・支援内容（AI下書き可・2500字）
-  evaluation?: string;         // 評価（AI下書き可・期間SOAP総合評価・看護師確認必須・2500字）
-  evaluatedAt?: string;        // 評価生成日時
+/** AI生成・取り込みのメタ情報（NANDA / freeform 共通） */
+export interface NursingCareIssueMeta {
+  aiGenerated?: boolean;        // AIで生成された下書きかどうか
+  aiModel?: string;             // 'claude-sonnet-4-6' 等
+  aiGeneratedAt?: string;       // AI生成日時
+  imported?: boolean;           // 既存計画書のコピペ取り込み起源かどうか
+  importedAt?: string;          // 取り込み日時
+}
+
+/** NANDA形式の課題 */
+export interface NursingCareIssueNanda extends NursingCareIssueMeta {
+  no: number;
+  date?: string;                // 記入日 YYYY-MM-DD
+  format: "nanda";
+  diagnosisLabel: string;       // 課題ラベル（看護診断名 or 自院の言い回し）
+  op: string[];                 // 観察計画（O-P）
+  tp: string[];                 // ケア計画（T-P）
+  ep: string[];                 // 指導計画（E-P）
+  evaluation?: string;          // 評価（AI下書き・看護師確認必須）
+  evaluatedAt?: string;
+}
+
+/** 自由記載形式の課題（既存実装互換 + コピペ取り込み） */
+export interface NursingCareIssueFreeform extends NursingCareIssueMeta {
+  no: number;
+  date?: string;
+  format?: "freeform";          // 後方互換のため optional（未指定時は freeform 扱い）
+  issue: string;                // 自由文（AI下書き or コピペ原文）
+  evaluation?: string;
+  evaluatedAt?: string;
+}
+
+/** 療養上の課題・支援内容 1行分（Discriminated Union） */
+export type NursingCarePlanIssue = NursingCareIssueNanda | NursingCareIssueFreeform;
+
+/** Issue から format を判定（後方互換：未指定なら freeform） */
+export function getIssueFormat(issue: NursingCarePlanIssue): NursingCareIssueFormat {
+  return issue.format === "nanda" ? "nanda" : "freeform";
+}
+
+/** Issue の表示用テキスト（NANDAなら整形して文字列化、freeformはそのまま） */
+export function issueToDisplayText(issue: NursingCarePlanIssue): string {
+  if (issue.format === "nanda") {
+    const lines: string[] = [issue.diagnosisLabel];
+    if (issue.op.length > 0) {
+      lines.push("(観察)");
+      issue.op.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
+    }
+    if (issue.tp.length > 0) {
+      lines.push("(ケア)");
+      issue.tp.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
+    }
+    if (issue.ep.length > 0) {
+      lines.push("(指導)");
+      issue.ep.forEach((item, i) => lines.push(`${formatBullet(i)}${item}`));
+    }
+    return lines.join("\n");
+  }
+  return issue.issue;
+}
+
+/** ①②③... の囲み数字（10超は括弧数字へフォールバック） */
+function formatBullet(idx: number): string {
+  const circled = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+  return idx < circled.length ? circled[idx] : `(${idx + 1})`;
 }
 
 export interface NursingCarePlan {
@@ -842,6 +906,9 @@ export interface NursingCarePlan {
   planType: NursingCarePlanType;           // 介護 / 医療
   planTitle: NursingCarePlanTitle;         // 共通 / 看護 / リハ
   isDraft: boolean;                        // 下書き / 確定
+
+  // 課題の記述形式（NANDA構造化 / 自由記載）
+  issueFormat: NursingCareIssueFormat;
 
   // 作成者（署名印字項目）
   authorName?: string;
@@ -864,14 +931,82 @@ export interface NursingCarePlan {
   // 備考（3000字、AI補助可）
   remarks?: string;
 
+  // 議事録（任意・AI生成時の参照ソース）
+  // 退院前カンファレンス・サービス担当者会議等の貼付テキスト
+  conferenceMemo?: string;
+
   // AI生成メタ情報
   aiModel?: string;
   aiPromptVersion?: string;
   aiGeneratedAt?: string;
 }
 
+/** DBの issues JSONB（snake_case）を camelCase + Discriminated Union に変換 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function issueFromRow(raw: any, idx: number): NursingCarePlanIssue {
+  const no: number = typeof raw.no === "number" ? raw.no : idx + 1;
+  const date: string | undefined = raw.date ?? undefined;
+  const evaluation: string | undefined = raw.evaluation ?? undefined;
+  const evaluatedAt: string | undefined = raw.evaluated_at ?? raw.evaluatedAt ?? undefined;
+  const meta: NursingCareIssueMeta = {
+    aiGenerated: raw.ai_generated ?? raw.aiGenerated ?? undefined,
+    aiModel: raw.ai_model ?? raw.aiModel ?? undefined,
+    aiGeneratedAt: raw.ai_generated_at ?? raw.aiGeneratedAt ?? undefined,
+    imported: raw.imported ?? undefined,
+    importedAt: raw.imported_at ?? raw.importedAt ?? undefined,
+  };
+  if (raw.format === "nanda") {
+    return {
+      no, date, format: "nanda",
+      diagnosisLabel: raw.diagnosis_label ?? raw.diagnosisLabel ?? "",
+      op: Array.isArray(raw.op) ? raw.op : [],
+      tp: Array.isArray(raw.tp) ? raw.tp : [],
+      ep: Array.isArray(raw.ep) ? raw.ep : [],
+      evaluation, evaluatedAt, ...meta,
+    };
+  }
+  // freeform（既存実装データは format フィールドなし）
+  return {
+    no, date, format: "freeform",
+    issue: raw.issue ?? "",
+    evaluation, evaluatedAt, ...meta,
+  };
+}
+
+/** camelCase → DBの snake_case JSONB へ変換 */
+function issueToRow(issue: NursingCarePlanIssue): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    no: issue.no,
+    date: issue.date ?? null,
+    evaluation: issue.evaluation ?? null,
+    evaluated_at: issue.evaluatedAt ?? null,
+    ai_generated: issue.aiGenerated ?? false,
+    ai_model: issue.aiModel ?? null,
+    ai_generated_at: issue.aiGeneratedAt ?? null,
+    imported: issue.imported ?? false,
+    imported_at: issue.importedAt ?? null,
+  };
+  if (issue.format === "nanda") {
+    return {
+      ...base,
+      format: "nanda",
+      diagnosis_label: issue.diagnosisLabel,
+      op: issue.op,
+      tp: issue.tp,
+      ep: issue.ep,
+    };
+  }
+  return {
+    ...base,
+    format: "freeform",
+    issue: issue.issue,
+  };
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function nursingCarePlanFromRow(row: any): NursingCarePlan {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawIssues: any[] = Array.isArray(row.issues) ? row.issues : [];
   return {
     id: row.id,
     patientId: row.patient_id,
@@ -881,17 +1016,19 @@ function nursingCarePlanFromRow(row: any): NursingCarePlan {
     planType: (row.plan_type ?? "介護") as NursingCarePlanType,
     planTitle: (row.plan_title ?? "共通") as NursingCarePlanTitle,
     isDraft: row.is_draft ?? true,
+    issueFormat: (row.issue_format ?? "nanda") as NursingCareIssueFormat,
     authorName: row.author_name ?? undefined,
     authorTitle: row.author_title ?? undefined,
     author2Name: row.author2_name ?? undefined,
     author2Title: row.author2_title ?? undefined,
     nursingGoal: row.nursing_goal ?? undefined,
-    issues: (row.issues ?? []) as NursingCarePlanIssue[],
+    issues: rawIssues.map((raw, i) => issueFromRow(raw, i)),
     hasSupplies: row.has_supplies ?? false,
     supplyProcedure: row.supply_procedure ?? undefined,
     supplyMaterials: row.supply_materials ?? undefined,
     supplyQuantity: row.supply_quantity ?? undefined,
     remarks: row.remarks ?? undefined,
+    conferenceMemo: row.conference_memo ?? undefined,
     aiModel: row.ai_model ?? undefined,
     aiPromptVersion: row.ai_prompt_version ?? undefined,
     aiGeneratedAt: row.ai_generated_at ?? undefined,
@@ -963,17 +1100,19 @@ export async function saveNursingCarePlan(
     plan_type: plan.planType,
     plan_title: plan.planTitle,
     is_draft: plan.isDraft,
+    issue_format: plan.issueFormat ?? "nanda",
     author_name: plan.authorName ?? null,
     author_title: plan.authorTitle ?? null,
     author2_name: plan.author2Name ?? null,
     author2_title: plan.author2Title ?? null,
     nursing_goal: plan.nursingGoal ?? null,
-    issues: plan.issues ?? [],
+    issues: (plan.issues ?? []).map(issueToRow),
     has_supplies: plan.hasSupplies,
     supply_procedure: plan.supplyProcedure ?? null,
     supply_materials: plan.supplyMaterials ?? null,
     supply_quantity: plan.supplyQuantity ?? null,
     remarks: plan.remarks ?? null,
+    conference_memo: plan.conferenceMemo ?? null,
     ai_model: plan.aiModel ?? null,
     ai_prompt_version: plan.aiPromptVersion ?? null,
     ai_generated_at: plan.aiGeneratedAt ?? null,

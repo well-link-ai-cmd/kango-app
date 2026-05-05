@@ -20,7 +20,8 @@ import { getAuthUser } from "@/lib/supabase-server";
  * プロンプトバージョン: v1.0.0 (2026-04-22)
  */
 
-const PROMPT_VERSION = "nursing-care-plan-evaluate-v1.0.0";
+const PROMPT_VERSION = "nursing-care-plan-evaluate-v1.1.0";  // v1.1.0: Sonnet 4.6 昇格
+const AI_MODEL = "claude-sonnet-4-6";
 
 interface PeriodSoapRecord {
   visitDate?: string;
@@ -132,6 +133,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const response = await generateAiResponse(userPrompt, systemPrompt, {
+      model: "sonnet",
       maxTokens: 8192,
       timeoutMs: 90000,
       temperature: 0.2,
@@ -173,7 +175,7 @@ export async function POST(req: NextRequest) {
         record_count: recordCount,
       },
       _ai_meta: {
-        model: "claude-haiku-4-5-20251001",
+        model: AI_MODEL,
         prompt_version: PROMPT_VERSION,
         generated_at: new Date().toISOString(),
       },

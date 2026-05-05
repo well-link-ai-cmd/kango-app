@@ -11,6 +11,11 @@
 --   - 衛生材料の種類・サイズ・必要量は看護師手入力（AIは触らない）
 --   - 看護・リハビリの目標、療養上の課題・支援内容、評価、備考はAI下書き可
 --   - 評価は期間SOAPから総合評価下書き → 看護師最終確認
+--
+-- 課題の記述形式（issue_format）:
+--   - 'nanda':    課題ラベル + OP（観察）/ TP（ケア）/ EP（指導）の構造化
+--   - 'freeform': 自由文1ブロック（既存実装互換）
+--   コピペ取り込み（imported=true）は freeform 扱い
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS nursing_care_plans (
@@ -29,6 +34,9 @@ CREATE TABLE IF NOT EXISTS nursing_care_plans (
   plan_title TEXT CHECK (plan_title IN ('共通','看護','リハ')) DEFAULT '共通',
   is_draft BOOLEAN DEFAULT TRUE,                                    -- 下書き/確定
 
+  -- 課題の記述形式（NANDA構造化 / 自由記載）
+  issue_format TEXT CHECK (issue_format IN ('nanda','freeform')) DEFAULT 'nanda',
+
   -- 作成者（職員氏名・署名印字項目）
   author_name TEXT,
   author_title TEXT,
@@ -39,10 +47,29 @@ CREATE TABLE IF NOT EXISTS nursing_care_plans (
   nursing_goal TEXT,
 
   -- 療養上の課題・支援内容（複数行、JSON配列）
-  -- [{ no: 1, date: "2026-04-22", issue: "...", evaluation: "...", evaluated_at: "..." }, ...]
-  -- issue: 課題・支援内容（AI下書き可・2500字）
-  -- evaluation: 評価（AI下書き可・期間SOAP総合評価・看護師確認必須・2500字）
-  -- evaluated_at: 評価生成日時
+  --
+  -- format='nanda' の場合:
+  --   {
+  --     no: 1, date: "2026-05-01", format: "nanda",
+  --     diagnosis_label: "不安感増強に伴う日常生活への支障リスク",
+  --     op: ["バイタル測定...", "..."],   // 観察計画
+  --     tp: ["不安傾聴...", "..."],       // ケア計画
+  --     ep: ["休息の取り方説明...", "..."], // 指導計画
+  --     ai_generated: true, ai_model: "claude-sonnet-4-6", ai_generated_at: "...",
+  --     imported: false,
+  --     evaluation: "...", evaluated_at: "..."
+  --   }
+  --
+  -- format='freeform' の場合（既存互換 + コピペ取り込み）:
+  --   {
+  --     no: 1, date: "2026-05-01", format: "freeform",
+  --     issue: "(自由文)",
+  --     ai_generated: false,
+  --     imported: true, imported_at: "...",  // コピペ取り込みの場合のみ
+  --     evaluation: "...", evaluated_at: "..."
+  --   }
+  --
+  -- format フィールドが欠落している既存データは freeform 扱い（後方互換）
   issues JSONB DEFAULT '[]'::jsonb,
 
   -- 衛生材料の情報（看護師手入力、AI禁止）
@@ -53,6 +80,10 @@ CREATE TABLE IF NOT EXISTS nursing_care_plans (
 
   -- 備考（3000字、AI補助可）
   remarks TEXT,
+
+  -- 議事録（任意・AI生成時の参照ソース・3000字想定）
+  -- 退院前カンファレンス・サービス担当者会議等の貼付テキスト
+  conference_memo TEXT,
 
   -- AI生成メタ情報（監査用）
   ai_model TEXT,
