@@ -7,7 +7,7 @@ import {
   getPatients, getRecordsByYearMonth, getRecordMonths, getRecords,
   deleteRecord, type Patient, type SoapRecord,
 } from "@/lib/storage";
-import { ArrowLeft, PlusCircle, Copy, Trash2, ChevronDown, ChevronUp, Pencil, FolderOpen, Folder, ClipboardList, Shield, FileText } from "lucide-react";
+import { ArrowLeft, PlusCircle, Copy, Trash2, ChevronDown, ChevronUp, Pencil, FolderOpen, Folder, ClipboardList, Shield, FileText, Mail } from "lucide-react";
 
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -143,6 +143,15 @@ export default function PatientDetailPage() {
         >
           <FileText size={18} />
           月次報告書（通常・精神科）
+        </Link>
+
+        {/* 情報提供書 */}
+        <Link
+          href={`/patients/${id}/info-provisions`}
+          className="btn-outline w-full justify-center mb-3 animate-fade-in-up"
+        >
+          <Mail size={18} />
+          情報提供書（4宛先）
         </Link>
 
         {/* New Record Button */}

@@ -1491,6 +1491,254 @@ export async function deleteVisitReport(id: string): Promise<void> {
   if (error) console.error("deleteVisitReport error:", error);
 }
 
+// =============================================================
+// 訪問看護情報提供書（info_provisions）— 4宛先対応
+// 様式: 別紙様式3 保医発0327第2号
+// 手順書: docs/報告書3様式_手順書.md
+// =============================================================
+
+export type InfoProvisionAddressee =
+  | "municipality"           // 市区町村宛
+  | "health_center"          // 保健所長宛
+  | "school"                 // 学校宛
+  | "medical_institution";   // 医療機関宛
+
+/** 訪問看護情報提供書 */
+export interface InfoProvision {
+  id: string;
+  patientId: string;
+
+  // 監査
+  createdAt: string;
+  updatedAt: string;
+
+  // 宛先・期間
+  addresseeType: InfoProvisionAddressee;
+  targetPeriodStart?: string;   // YYYY-MM-DD（AI生成元のSOAP集約期間）
+  targetPeriodEnd?: string;
+  issuedDate?: string;          // 作成年月日 YYYY-MM-DD
+  isDraft: boolean;
+
+  // 全宛先共通
+  mainDisease?: string;          // 主傷病名
+  nursingContent?: string;       // 看護の内容
+  otherNotes?: string;           // その他特筆すべき事項
+
+  // 訪問日数（市区町村・保健所長・学校）
+  monthlyVisitMonth?: string;    // YYYY-MM
+  monthlyVisitDays?: number;
+  monthlyVisitCount?: number;
+
+  // 市区町村・保健所長
+  familyCaregiverInfo?: string;  // 家族等及び主な介護者に係る情報
+  welfareServices?: string;       // 必要と考えられる保健福祉サービス
+
+  // 市区町村のみ
+  diseaseState?: string;          // 病状・障害等の状態
+
+  // 学校・医療機関
+  dailyLifeBasics?: string;       // 食生活・清潔・排泄・睡眠・生活リズム等
+  medicationStatus?: string;      // 服薬等の状況
+  familyStatus?: string;          // 家族等について／家族・主な介護者等
+
+  // 学校のみ
+  diseaseProgress?: string;       // 傷病の経過
+  medicalCareMethods?: string;    // 医療的ケアの実施方法及び留意事項
+
+  // 医療機関のみ
+  pastHistory?: string;           // 既往歴
+  nursingProblems?: string;       // 看護上の問題等
+  careMethodsContinuation?: string; // ケア時の具体的方法・留意点・継続すべき看護
+
+  // AI生成メタ
+  aiModel?: string;
+  aiPromptVersion?: string;
+  aiGeneratedAt?: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function infoProvisionFromRow(row: any): InfoProvision {
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    addresseeType: row.addressee_type as InfoProvisionAddressee,
+    targetPeriodStart: row.target_period_start ?? undefined,
+    targetPeriodEnd: row.target_period_end ?? undefined,
+    issuedDate: row.issued_date ?? undefined,
+    isDraft: row.is_draft ?? true,
+    mainDisease: row.main_disease ?? undefined,
+    nursingContent: row.nursing_content ?? undefined,
+    otherNotes: row.other_notes ?? undefined,
+    monthlyVisitMonth: row.monthly_visit_month ?? undefined,
+    monthlyVisitDays: row.monthly_visit_days ?? undefined,
+    monthlyVisitCount: row.monthly_visit_count ?? undefined,
+    familyCaregiverInfo: row.family_caregiver_info ?? undefined,
+    welfareServices: row.welfare_services ?? undefined,
+    diseaseState: row.disease_state ?? undefined,
+    dailyLifeBasics: row.daily_life_basics ?? undefined,
+    medicationStatus: row.medication_status ?? undefined,
+    familyStatus: row.family_status ?? undefined,
+    diseaseProgress: row.disease_progress ?? undefined,
+    medicalCareMethods: row.medical_care_methods ?? undefined,
+    pastHistory: row.past_history ?? undefined,
+    nursingProblems: row.nursing_problems ?? undefined,
+    careMethodsContinuation: row.care_methods_continuation ?? undefined,
+    aiModel: row.ai_model ?? undefined,
+    aiPromptVersion: row.ai_prompt_version ?? undefined,
+    aiGeneratedAt: row.ai_generated_at ?? undefined,
+  };
+}
+
+/** 患者の情報提供書一覧（新しい順） */
+export async function getInfoProvisions(patientId: string): Promise<InfoProvision[]> {
+  const { data, error } = await getSupabase()
+    .from("info_provisions")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("issued_date", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("getInfoProvisions error:", error);
+    return [];
+  }
+  return (data ?? []).map(infoProvisionFromRow);
+}
+
+/** 単一の情報提供書を取得 */
+export async function getInfoProvision(id: string): Promise<InfoProvision | null> {
+  const { data, error } = await getSupabase()
+    .from("info_provisions")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getInfoProvision error:", error);
+    return null;
+  }
+  return data ? infoProvisionFromRow(data) : null;
+}
+
+/** 新規作成（id未指定）または更新（id指定） */
+export async function saveInfoProvision(
+  provision: Omit<InfoProvision, "id" | "createdAt" | "updatedAt"> & { id?: string }
+): Promise<InfoProvision | null> {
+  const userId = await getCurrentUserId();
+
+  const row = {
+    ...(provision.id ? { id: provision.id } : {}),
+    patient_id: provision.patientId,
+    addressee_type: provision.addresseeType,
+    target_period_start: provision.targetPeriodStart ?? null,
+    target_period_end: provision.targetPeriodEnd ?? null,
+    issued_date: provision.issuedDate ?? null,
+    is_draft: provision.isDraft,
+    main_disease: provision.mainDisease ?? null,
+    nursing_content: provision.nursingContent ?? null,
+    other_notes: provision.otherNotes ?? null,
+    monthly_visit_month: provision.monthlyVisitMonth ?? null,
+    monthly_visit_days: provision.monthlyVisitDays ?? null,
+    monthly_visit_count: provision.monthlyVisitCount ?? null,
+    family_caregiver_info: provision.familyCaregiverInfo ?? null,
+    welfare_services: provision.welfareServices ?? null,
+    disease_state: provision.diseaseState ?? null,
+    daily_life_basics: provision.dailyLifeBasics ?? null,
+    medication_status: provision.medicationStatus ?? null,
+    family_status: provision.familyStatus ?? null,
+    disease_progress: provision.diseaseProgress ?? null,
+    medical_care_methods: provision.medicalCareMethods ?? null,
+    past_history: provision.pastHistory ?? null,
+    nursing_problems: provision.nursingProblems ?? null,
+    care_methods_continuation: provision.careMethodsContinuation ?? null,
+    ai_model: provision.aiModel ?? null,
+    ai_prompt_version: provision.aiPromptVersion ?? null,
+    ai_generated_at: provision.aiGeneratedAt ?? null,
+    user_id: userId,
+    ...(provision.id ? {} : { created_by: userId }),
+  };
+
+  const { data, error } = await getSupabase()
+    .from("info_provisions")
+    .upsert(row, { onConflict: "id" })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("saveInfoProvision error:", error);
+    return null;
+  }
+  return infoProvisionFromRow(data);
+}
+
+/** 削除 */
+export async function deleteInfoProvision(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("info_provisions")
+    .delete()
+    .eq("id", id);
+  if (error) console.error("deleteInfoProvision error:", error);
+}
+
+/** 宛先タイプ → 表示名 */
+export const INFO_PROVISION_ADDRESSEE_LABEL: Record<InfoProvisionAddressee, string> = {
+  municipality: "市区町村宛",
+  health_center: "保健所長宛",
+  school: "学校宛",
+  medical_institution: "医療機関宛",
+};
+
+/**
+ * 宛先タイプごとに利用するフィールドキー一覧（UI表示制御 / AI生成出力欄の判定に使う）
+ * 順序は UI/印刷の表示順に合わせる。
+ */
+export const INFO_PROVISION_FIELDS: Record<
+  InfoProvisionAddressee,
+  Array<keyof InfoProvision>
+> = {
+  municipality: [
+    "mainDisease",
+    "diseaseState",
+    "monthlyVisitMonth",
+    "familyCaregiverInfo",
+    "nursingContent",
+    "welfareServices",
+    "otherNotes",
+  ],
+  health_center: [
+    "mainDisease",
+    "monthlyVisitMonth",
+    "familyCaregiverInfo",
+    "nursingContent",
+    "welfareServices",
+    "otherNotes",
+  ],
+  school: [
+    "dailyLifeBasics",
+    "medicationStatus",
+    "familyStatus",
+    "mainDisease",
+    "diseaseProgress",
+    "monthlyVisitMonth",
+    "nursingContent",
+    "medicalCareMethods",
+    "otherNotes",
+  ],
+  medical_institution: [
+    "dailyLifeBasics",
+    "medicationStatus",
+    "familyStatus",
+    "mainDisease",
+    "pastHistory",
+    "nursingProblems",
+    "nursingContent",
+    "careMethodsContinuation",
+    "otherNotes",
+  ],
+};
+
 // ---- localStorageからの自動移行 ----
 
 const MIGRATION_KEY = "kango_migrated_to_supabase";
