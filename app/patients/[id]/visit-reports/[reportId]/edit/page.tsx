@@ -8,7 +8,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { getPatients, getVisitReport, type Patient, type VisitReport } from "@/lib/storage";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Home } from "lucide-react";
 import VisitReportForm from "../../_components/VisitReportForm";
 
 export default function EditVisitReportPage() {
@@ -54,6 +54,9 @@ export default function EditVisitReportPage() {
             <h1>月次報告書の編集</h1>
             <p className="subtitle">{patient.name} 様 / {report.targetMonth}</p>
           </div>
+          <Link href="/patients" className="header-action" aria-label="患者一覧へ戻る" title="患者一覧へ戻る">
+            <Home size={20} />
+          </Link>
         </div>
       </header>
 

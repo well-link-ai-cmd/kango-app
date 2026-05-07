@@ -15,7 +15,7 @@ import {
   type Patient,
   type VisitReport,
 } from "@/lib/storage";
-import { ArrowLeft, PlusCircle, FileText, Trash2, ChevronDown, ChevronUp, Copy, Pencil } from "lucide-react";
+import { ArrowLeft, PlusCircle, FileText, Trash2, ChevronDown, ChevronUp, Copy, Pencil, Home } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 export default function VisitReportListPage() {
@@ -83,6 +83,9 @@ export default function VisitReportListPage() {
             <h1>月次報告書</h1>
             <p className="subtitle">{patient.name} 様</p>
           </div>
+          <Link href="/patients" className="header-action" aria-label="患者一覧へ戻る" title="患者一覧へ戻る">
+            <Home size={20} />
+          </Link>
         </div>
       </header>
 
