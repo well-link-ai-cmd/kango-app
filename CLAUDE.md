@@ -1,23 +1,58 @@
 # kango-app — AI訪問看護記録アシスト
 
-## 引き継ぎ（最終更新: 2026-05-05 月次報告書 Phase 1 実装完了・migration実行済・動作確認待ち）
+## 引き継ぎ（最終更新: 2026-05-08 — 月次報告書 + 情報提供書 master投入完了 / migration実行済 / 動作確認待ち）
 
-### 次回再開時の最優先タスク（月次報告書 Phase 1）
-ブランチ: `feat/visit-report`（push済 e24117a）
+### 次回再開時の最優先タスク
+1. **本番URLでE2E動作確認**（chrome-devtools MCP 推奨）
+   - 本番: https://kango-app.vercel.app
+   - 月次報告書（通常/精神科）→ 対象月選択 → AI生成 → 4欄編集 → 確定保存
+   - 情報提供書（医療機関宛）→ 入院シナリオで AI 生成 → 編集 → 確定保存 → カイポケへコピペ
+   - 情報提供書 別宛先（市区町村）でフィールドが切り替わるか確認
+2. **実運用フィードバック収集**：以下を数日試して品質メモ
+   - 月次報告書: 通常/精神科の AI 出力品質、まだ補正されない用語、文体の違和感
+   - 情報提供書: 4宛先別トーンの妥当性、各欄の文字数バランス
+   - SOAP: 継続観察
+
+### 次フェーズ候補
+1. **褥瘡計画書 写真登録機能**：`memory/project_pressure_ulcer_photo.md` 参照
+2. **Few-shot例の領域分散**：月次報告書/情報提供書は現在 Few-shot 未使用。実記録ベースで分散追加検討
+3. **計画評価機能**（半年ごと、記録からの修正提案）
+4. **PT用SOAPプロンプト追加**（30分・分岐のみ）
+5. **Next.js 16 対応**：`middleware.ts` → `proxy.ts` 移行（deprecation警告対応）
+
+### 完了（2026-05-08 セッション — 3PR master投入）
+
+#### PR #8（commit 5cf93c6）— UI改善
+- `getPatients()` で `nameKana` 優先（フォールバック name）の `localeCompare("ja-JP")` ソート
+- 利用者一覧トップ・あ行/か行などのグループ内も自動的にあいうえお順
+- 看護計画書/褥瘡計画書/利用者編集の各サブページ（一覧/新規/編集）のヘッダー右側にホームボタン追加（`/patients` 行き）
+
+#### PR #9（commit 842d3ab）— 月次訪問看護報告書 Phase 1
+- 別紙様式2（通常）/ 別紙様式4（精神科） 保医発0327第2号
+- 通常/精神科の様式切替、対象月選択、SOAP集約からの4欄AIドラフト生成（Haiku 4.5）
+- リハ別添（Barthel全10項目・合計100点表示）/ GAF入力（精神科）
+- migration 008（visit_reports + RLS）idempotent 化済 → **本番DB実行済**
+- API: `/api/visit-report/generate`（v1.0.0）
+
+#### PR #10（commit 923c57e）— 訪問看護情報提供書（4宛先）Phase 1
+- 別紙様式3 保医発0327第2号 / カイポケ準拠の4宛先（市区町村/保健所長/学校/医療機関）対応
+- 宛先別フィールド構成（最小14欄）を `INFO_PROVISION_FIELDS` で動的に表示切替
+- 宛先別トーン分岐（市区町村=福祉/保健所長=公衆衛生/学校=小児教育/医療機関=医療連携）
+- API: `/api/info-provision/generate`（v1.0.0、Haiku 4.5、宛先別 Tool schema 動的構築）
+- 各欄1000字制限・文字数カウンタ表示・「※AI下書き。看護師確認必須」自動付与
+- 患者詳細ページに「情報提供書（4宛先）」リンク追加
+- migration 009（info_provisions + RLS）idempotent 化済 → **本番DB実行済**
+
+#### AI責任分界（情報提供書）
+- ❌ 宛先選定・算定区分（療養費1/2/3）・ADL点数判定 → 看護師手入力
+- ✅ 本文ドラフト（主傷病・看護内容・家族介護・サービス等）
+
+---
+
+## 過去引き継ぎ
+
+### 月次報告書 Phase 1（2026-05-05 — PR #9 で master 投入完了）
 詳細メモ: `~/.claude/projects/C--Users-thegl-Documents-kango-app/memory/project_visit_reports_phase1.md`
-
-1. **migration 008 idempotent化のコミット&push**（DROP POLICY IF EXISTS 追加済・未コミット）
-2. **preview URL で E2E 動作確認**
-   - URL: `https://kango-83i94rhd3-well-link-ai-cmds-projects.vercel.app`（最新preview）
-   - 通常: SOAPあり患者 → 様式=通常 → 対象月選択 → AI生成 → 4欄編集 → 確定保存
-   - 精神科: 様式=精神科 → GAF入力 → AI生成 → 確定保存
-   - リハ別添: 通常で「別添あり」→ Barthel全10項目 → 合計100点表示確認
-3. **動作確認OK後 master へPR作成→マージ**
-
-### その後のフェーズ
-1. **情報提供書（4宛先トーン変換）の実装**：`docs/報告書3様式_手順書.md` 参照、Haiku 4.5
-2. **褥瘡計画書 写真登録機能**：`memory/project_pressure_ulcer_photo.md` 参照
-3. 実運用フィードバック収集：SOAP生成・看護計画書・評価の品質チェック
 
 ### モデル戦略（2026-05-05 確定）
 | 用途 | モデル | 根拠 |
