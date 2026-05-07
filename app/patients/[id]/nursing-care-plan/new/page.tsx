@@ -20,7 +20,7 @@ import {
   type SoapRecord,
   type NursingCarePlan,
 } from "@/lib/storage";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Home } from "lucide-react";
 import NursingCarePlanForm from "../_components/NursingCarePlanForm";
 
 export default function NewNursingCarePlanPage() {
@@ -103,6 +103,9 @@ export default function NewNursingCarePlanPage() {
             <h1>{isCopy ? "看護計画書の複製作成" : "看護計画書の作成"}</h1>
             <p className="subtitle">{patient.name} 様</p>
           </div>
+          <Link href="/patients" className="header-action" aria-label="患者一覧へ戻る" title="患者一覧へ戻る">
+            <Home size={20} />
+          </Link>
         </div>
       </header>
 

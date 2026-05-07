@@ -15,7 +15,7 @@ import {
   type Patient,
   type PressureUlcerPlan,
 } from "@/lib/storage";
-import { ArrowLeft, PlusCircle, Shield, Trash2, ChevronDown, ChevronUp, Copy, Pencil, CopyPlus, FileEdit } from "lucide-react";
+import { ArrowLeft, PlusCircle, Shield, Trash2, ChevronDown, ChevronUp, Copy, Pencil, CopyPlus, FileEdit, Home } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 export default function PressureUlcerPlanListPage() {
@@ -88,6 +88,9 @@ export default function PressureUlcerPlanListPage() {
             <h1>褥瘡計画書</h1>
             <p className="subtitle">{patient.name} 様</p>
           </div>
+          <Link href="/patients" className="header-action" aria-label="患者一覧へ戻る" title="患者一覧へ戻る">
+            <Home size={20} />
+          </Link>
         </div>
       </header>
 
