@@ -136,6 +136,15 @@ export default function PatientDetailPage() {
           褥瘡計画書
         </Link>
 
+        {/* 月次報告書 */}
+        <Link
+          href={`/patients/${id}/visit-reports`}
+          className="btn-outline w-full justify-center mb-3 animate-fade-in-up"
+        >
+          <FileText size={18} />
+          月次報告書（通常・精神科）
+        </Link>
+
         {/* New Record Button */}
         <Link
           href={`/patients/${id}/records/new`}

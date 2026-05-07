@@ -1226,6 +1226,271 @@ export async function deleteNursingCarePlan(id: string): Promise<void> {
   if (error) console.error("deleteNursingCarePlan error:", error);
 }
 
+// =============================================================
+// 訪問看護報告書（visit_reports）— 通常 / 精神科
+// 様式: 別紙様式2（通常） / 別紙様式4（精神科） 保医発0327第2号
+// 手順書: docs/報告書3様式_手順書.md
+// =============================================================
+
+export type VisitReportType = "normal" | "psychiatric";
+export type VisitCalendarSymbol = "○" | "◇" | "△";  // 看護師 / リハ職 / 特別指示書
+export type DementiaLevel = "自立" | "Ⅰ" | "Ⅱa" | "Ⅱb" | "Ⅲa" | "Ⅲb" | "Ⅳ" | "M";
+
+/** Barthel Index（10項目、0-100） */
+export interface BarthelIndex {
+  feeding?: number;       // 食事 0/5/10
+  transfer?: number;      // 移乗 0/5/10/15
+  grooming?: number;      // 整容 0/5
+  toilet?: number;        // トイレ 0/5/10
+  bathing?: number;       // 入浴 0/5
+  walking?: number;       // 歩行 0/5/10/15
+  stairs?: number;        // 階段 0/5/10
+  dressing?: number;      // 更衣 0/5/10
+  bowel?: number;         // 排便 0/5/10
+  bladder?: number;       // 排尿 0/5/10
+}
+
+/** リハ別添（通常報告書のみ・PT/OT/STが訪問した場合） */
+export interface RehabAttachment {
+  dailyLifeLevel?: DailyLifeLevel;
+  dementiaLevel?: DementiaLevel;
+  barthelIndex?: BarthelIndex;
+  barthelTotal?: number;
+  communication?: string;
+}
+
+/** 衛生材料（看護師手入力・AI禁止） */
+export interface HygieneMaterialItem {
+  name: string;        // 例: ガーゼ、フィルム材
+  quantity: string;    // 例: 1日3枚 × 30日
+  status: "適切" | "不足" | "過剰" | "変更検討";
+}
+
+export interface HygieneMaterial {
+  items: HygieneMaterialItem[];
+  requestToDoctor?: string;  // 主治医への依頼事項（種類・量変更等）
+}
+
+/** 訪問日暦の1日 */
+export interface VisitCalendarEntry {
+  date: string;          // YYYY-MM-DD
+  symbol: VisitCalendarSymbol;
+}
+
+/** 訪問看護報告書 */
+export interface VisitReport {
+  id: string;
+  patientId: string;
+
+  // 監査情報
+  createdAt: string;
+  updatedAt: string;
+
+  // 基本情報
+  reportType: VisitReportType;
+  targetMonth: string;          // YYYY-MM
+  isDraft: boolean;
+
+  // 作成者
+  authorName?: string;
+  authorTitle?: string;
+
+  // 本文（AI下書き可）
+  diseaseProgress?: string;
+  nursingContent?: string;
+  familyCare?: string;          // 通常: 家庭での介護の状況 / 精神科: 家族等との関係
+  specialNotes?: string;
+
+  // 衛生材料（看護師手入力）
+  hygieneMaterial?: HygieneMaterial;
+
+  // 訪問日暦
+  visitCalendar?: VisitCalendarEntry[];
+
+  // リハ別添（通常のみ）
+  rehabAttachment?: RehabAttachment;
+
+  // GAF（精神科のみ・看護師手入力）
+  gafScore?: number;
+  gafJudgeDate?: string;
+  gafUnavailable?: boolean;
+
+  // AI生成メタ
+  aiModel?: string;
+  aiPromptVersion?: string;
+  aiGeneratedAt?: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function visitReportFromRow(row: any): VisitReport {
+  const rehab = row.rehab_attachment;
+  const rehabAttachment: RehabAttachment | undefined = rehab
+    ? {
+        dailyLifeLevel: rehab.daily_life_level ?? rehab.dailyLifeLevel ?? undefined,
+        dementiaLevel: rehab.dementia_level ?? rehab.dementiaLevel ?? undefined,
+        barthelIndex: rehab.barthel_index ?? rehab.barthelIndex ?? undefined,
+        barthelTotal: rehab.barthel_total ?? rehab.barthelTotal ?? undefined,
+        communication: rehab.communication ?? undefined,
+      }
+    : undefined;
+
+  const hygiene = row.hygiene_material;
+  const hygieneMaterial: HygieneMaterial | undefined =
+    hygiene && (Array.isArray(hygiene.items) || hygiene.requestToDoctor || hygiene.request_to_doctor)
+      ? {
+          items: Array.isArray(hygiene.items) ? hygiene.items : [],
+          requestToDoctor: hygiene.request_to_doctor ?? hygiene.requestToDoctor ?? undefined,
+        }
+      : undefined;
+
+  return {
+    id: row.id,
+    patientId: row.patient_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    reportType: row.report_type as VisitReportType,
+    targetMonth: row.target_month,
+    isDraft: row.is_draft ?? true,
+    authorName: row.author_name ?? undefined,
+    authorTitle: row.author_title ?? undefined,
+    diseaseProgress: row.disease_progress ?? undefined,
+    nursingContent: row.nursing_content ?? undefined,
+    familyCare: row.family_care ?? undefined,
+    specialNotes: row.special_notes ?? undefined,
+    hygieneMaterial,
+    visitCalendar: Array.isArray(row.visit_calendar) ? row.visit_calendar : [],
+    rehabAttachment,
+    gafScore: row.gaf_score ?? undefined,
+    gafJudgeDate: row.gaf_judge_date ?? undefined,
+    gafUnavailable: row.gaf_unavailable ?? false,
+    aiModel: row.ai_model ?? undefined,
+    aiPromptVersion: row.ai_prompt_version ?? undefined,
+    aiGeneratedAt: row.ai_generated_at ?? undefined,
+  };
+}
+
+/** 患者の月次報告書一覧（新しい順） */
+export async function getVisitReports(patientId: string): Promise<VisitReport[]> {
+  const { data, error } = await getSupabase()
+    .from("visit_reports")
+    .select("*")
+    .eq("patient_id", patientId)
+    .order("target_month", { ascending: false });
+
+  if (error) {
+    console.error("getVisitReports error:", error);
+    return [];
+  }
+  return (data ?? []).map(visitReportFromRow);
+}
+
+/** 単一の月次報告書を取得 */
+export async function getVisitReport(id: string): Promise<VisitReport | null> {
+  const { data, error } = await getSupabase()
+    .from("visit_reports")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getVisitReport error:", error);
+    return null;
+  }
+  return data ? visitReportFromRow(data) : null;
+}
+
+/** 同一の患者・対象月・様式の報告書を取得（重複作成防止用） */
+export async function getVisitReportByMonth(
+  patientId: string,
+  targetMonth: string,
+  reportType: VisitReportType
+): Promise<VisitReport | null> {
+  const { data, error } = await getSupabase()
+    .from("visit_reports")
+    .select("*")
+    .eq("patient_id", patientId)
+    .eq("target_month", targetMonth)
+    .eq("report_type", reportType)
+    .maybeSingle();
+
+  if (error) {
+    console.error("getVisitReportByMonth error:", error);
+    return null;
+  }
+  return data ? visitReportFromRow(data) : null;
+}
+
+/** 新規作成（id未指定）または更新（id指定） */
+export async function saveVisitReport(
+  report: Omit<VisitReport, "id" | "createdAt" | "updatedAt"> & { id?: string }
+): Promise<VisitReport | null> {
+  const userId = await getCurrentUserId();
+
+  const rehab = report.rehabAttachment;
+  const rehabRow = rehab
+    ? {
+        daily_life_level: rehab.dailyLifeLevel ?? null,
+        dementia_level: rehab.dementiaLevel ?? null,
+        barthel_index: rehab.barthelIndex ?? null,
+        barthel_total: rehab.barthelTotal ?? null,
+        communication: rehab.communication ?? null,
+      }
+    : null;
+
+  const hygieneRow = report.hygieneMaterial
+    ? {
+        items: report.hygieneMaterial.items ?? [],
+        request_to_doctor: report.hygieneMaterial.requestToDoctor ?? null,
+      }
+    : {};
+
+  const row = {
+    ...(report.id ? { id: report.id } : {}),
+    patient_id: report.patientId,
+    report_type: report.reportType,
+    target_month: report.targetMonth,
+    is_draft: report.isDraft,
+    author_name: report.authorName ?? null,
+    author_title: report.authorTitle ?? null,
+    disease_progress: report.diseaseProgress ?? null,
+    nursing_content: report.nursingContent ?? null,
+    family_care: report.familyCare ?? null,
+    special_notes: report.specialNotes ?? null,
+    hygiene_material: hygieneRow,
+    visit_calendar: report.visitCalendar ?? [],
+    rehab_attachment: rehabRow,
+    gaf_score: report.gafScore ?? null,
+    gaf_judge_date: report.gafJudgeDate ?? null,
+    gaf_unavailable: report.gafUnavailable ?? false,
+    ai_model: report.aiModel ?? null,
+    ai_prompt_version: report.aiPromptVersion ?? null,
+    ai_generated_at: report.aiGeneratedAt ?? null,
+    user_id: userId,
+    ...(report.id ? {} : { created_by: userId }),
+  };
+
+  const { data, error } = await getSupabase()
+    .from("visit_reports")
+    .upsert(row, { onConflict: "patient_id,target_month,report_type" })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("saveVisitReport error:", error);
+    return null;
+  }
+  return visitReportFromRow(data);
+}
+
+/** 削除 */
+export async function deleteVisitReport(id: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("visit_reports")
+    .delete()
+    .eq("id", id);
+  if (error) console.error("deleteVisitReport error:", error);
+}
+
 // ---- localStorageからの自動移行 ----
 
 const MIGRATION_KEY = "kango_migrated_to_supabase";
