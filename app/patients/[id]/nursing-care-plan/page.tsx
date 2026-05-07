@@ -27,6 +27,7 @@ import {
   Pencil,
   CopyPlus,
   CheckCircle2,
+  Home,
 } from "lucide-react";
 
 export default function NursingCarePlanListPage() {
@@ -102,6 +103,9 @@ export default function NursingCarePlanListPage() {
             <h1>看護計画書</h1>
             <p className="subtitle">{patient.name} 様</p>
           </div>
+          <Link href="/patients" className="header-action" aria-label="患者一覧へ戻る" title="患者一覧へ戻る">
+            <Home size={20} />
+          </Link>
         </div>
       </header>
 

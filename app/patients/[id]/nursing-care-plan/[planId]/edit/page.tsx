@@ -17,7 +17,7 @@ import {
   type SoapRecord,
   type NursingCarePlan,
 } from "@/lib/storage";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Home } from "lucide-react";
 import NursingCarePlanForm from "../../_components/NursingCarePlanForm";
 
 export default function EditNursingCarePlanPage() {
@@ -78,6 +78,9 @@ export default function EditNursingCarePlanPage() {
               {plan.isDraft && <span className="ml-2 text-xs px-2 py-0.5 rounded" style={{ background: "rgba(245, 158, 11, 0.15)", color: "#B45309" }}>下書き</span>}
             </p>
           </div>
+          <Link href="/patients" className="header-action" aria-label="患者一覧へ戻る" title="患者一覧へ戻る">
+            <Home size={20} />
+          </Link>
         </div>
       </header>
 
