@@ -19,7 +19,7 @@ import {
   type SoapRecord,
   type PressureUlcerPlan,
 } from "@/lib/storage";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Home } from "lucide-react";
 import PressureUlcerPlanForm from "../_components/PressureUlcerPlanForm";
 
 export default function NewPressureUlcerPlanPage() {
@@ -77,6 +77,9 @@ export default function NewPressureUlcerPlanPage() {
             <h1>{isCopy ? "褥瘡計画書の複製作成" : "褥瘡計画書の作成"}</h1>
             <p className="subtitle">{patient.name} 様</p>
           </div>
+          <Link href="/patients" className="header-action" aria-label="患者一覧へ戻る" title="患者一覧へ戻る">
+            <Home size={20} />
+          </Link>
         </div>
       </header>
 

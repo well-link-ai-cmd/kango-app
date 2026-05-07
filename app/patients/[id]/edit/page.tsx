@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getPatients, savePatient, getNursingContents, saveNursingContents, generateId, soapToText, textToSoap, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem } from "@/lib/storage";
-import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2, ClipboardList } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2, ClipboardList, Home } from "lucide-react";
 import Link from "next/link";
 
 const CARE_LEVELS: CareLevel[] = [
@@ -192,7 +192,10 @@ export default function EditPatientPage() {
           <Link href={`/patients/${id}`} className="header-back" aria-label="戻る">
             <ArrowLeft size={22} />
           </Link>
-          <h1>利用者情報を編集</h1>
+          <h1 className="flex-1">利用者情報を編集</h1>
+          <Link href="/patients" className="header-action" aria-label="患者一覧へ戻る" title="患者一覧へ戻る">
+            <Home size={20} />
+          </Link>
         </div>
       </header>
 

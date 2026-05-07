@@ -309,7 +309,13 @@ export async function getPatients(): Promise<Patient[]> {
     .select("*")
     .order("created_at", { ascending: true });
   if (error) { console.error("getPatients error:", error); return []; }
-  return (data ?? []).map(rowToPatient);
+  const patients = (data ?? []).map(rowToPatient);
+  // あいうえお順にソート（nameKana 優先、なければ name にフォールバック）
+  return patients.sort((a, b) => {
+    const ka = (a.nameKana?.trim() || a.name || "").normalize("NFKC");
+    const kb = (b.nameKana?.trim() || b.name || "").normalize("NFKC");
+    return ka.localeCompare(kb, "ja-JP");
+  });
 }
 
 export async function savePatient(patient: Patient): Promise<void> {
