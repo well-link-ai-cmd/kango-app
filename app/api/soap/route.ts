@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
+import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 import { SOAP_FEWSHOT_EXAMPLES } from "@/lib/soap-fewshot";
 
@@ -234,9 +235,7 @@ ${rawInput}`;
     const { S, O, A, P } = response.toolInput as { S: string; O: string; A: string; P: string };
     return NextResponse.json({ S, O, A, P });
   } catch (e) {
-    console.error(e);
-    const errorMessage = e instanceof Error ? e.message : "AI変換中にエラーが発生しました。";
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return aiErrorResponse(e);
   }
 }
 
