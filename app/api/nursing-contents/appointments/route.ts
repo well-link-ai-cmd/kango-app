@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
+import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser } from "@/lib/supabase-server";
 
 export async function POST(req: NextRequest) {
@@ -39,8 +40,6 @@ export async function POST(req: NextRequest) {
     const result = JSON.parse(jsonMatch[0]);
     return NextResponse.json(result);
   } catch (e) {
-    console.error(e);
-    const errorMessage = e instanceof Error ? e.message : "AI処理中にエラーが発生しました";
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return aiErrorResponse(e);
   }
 }
