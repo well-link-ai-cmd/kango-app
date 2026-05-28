@@ -1,5 +1,24 @@
 # kango-app — AI訪問看護記録アシスト
 
+## 引き継ぎ（最終更新: 2026-05-29 — SOAP品質改善・Prompt Caching・過去SOAP参考化 master投入完了）
+
+### 次回再開時の最優先タスク
+1. **本番動作確認（2026-05-29 デプロイ分）**：
+   - **Prompt Caching**：本番で `cache_read_input_tokens` が発生しているか Anthropic Console で確認。朝の集中時間帯でヒット率が出る想定。1時間TTL・SOAP生成のみ対象（questions/alerts は system が Haiku キャッシュ最小2048トークン未満で対象外）
+   - **過去SOAP参考化**：基礎情報ページで過去SOAPを書式自由・コロン不要で貼り付け→保存→SOAP生成で「過去記録の参考」として使われるか
+   - **既存患者の後方互換**：旧形式（S/O/A/P）の initialSoapRecords が getPatient の normalizeInitialSoap で生テキストに正しく変換・表示されるか
+2. **不要ブランチ削除**：`feat/soap-output-refine`・`feat/soap-prompt-caching`・`feat/initial-soap-freetext`（いずれも master マージ済み）
+3. **古いmemory整理**：`project_kango_prompt_caching_pr.md`（「PR #5 merge待ち」記載／実際は 3445836 で別実装・完了済み）を削除
+
+### 完了（2026-05-29 セッション — 3改修 master投入）
+- **0395364**：SOAP品質改善。O=事実／A=評価／P=計画 の役割を厳密化、S話者分類（本人/妻/娘をラベル保持）、`corrected_s_input`＋ラベル一致・8割長さフォールバックで S情報の完全保持（簡略化・ラベル落ち解消）、Few-shot 例1/2の A純化・P計画文化、S情報あり例4追加。P欄が S情報・A課題に対応する計画を含むように改善
+- **3445836**：Prompt Caching（1時間TTL）。`ai-client.ts` に `cacheSystemTtl` オプション追加、`soap/route.ts` の固定system（約14,000トークン）をキャッシュ。実測（run.ts soap all）で 2件目以降 cache_read=14,097、入力コスト約66%削減
+- **1e7527c**：過去SOAP生テキスト参考化。`initialSoapRecords` を `{S,O,A,P}`→`{text,visitDate}` に、`getPatient` で後方互換変換（DBマイグレーション不要）、SOAP生成では「用語・言い回しの参考」（judgment-only）に分離
+- 検証: `tests/prompts/soap/baseline-2026-05-29.json` / `post-oap-sspeaker-2026-05-29.json`、詳細は `tests/prompts/soap/CHANGELOG.md`
+- 関連相談: 当初の「トークン使いすぎ」は Prompt Caching で解決（5月実コスト $8.46≒約1,300円、定常運用で月約2,300円・全員利用で約3,000〜3,400円の試算）
+
+---
+
 ## 引き継ぎ（最終更新: 2026-05-18 — 529過負荷エラー対策 + 横断スキル化 master投入完了）
 
 ### 他端末（Windows）でセットアップする時にやること
