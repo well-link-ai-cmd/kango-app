@@ -57,6 +57,15 @@ function loadDotenv(filePath: string): void {
   }
 }
 
+// -------- S情報の話者ラベル抽出（route.ts と同期） --------
+function extractSLabels(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => line.match(/^\s*(.{0,6}?S)[:：]/))
+    .filter((m): m is RegExpMatchArray => m !== null)
+    .map((m) => m[1].trim());
+}
+
 // -------- 型定義 --------
 interface PrevRecord {
   visitDate?: string;
@@ -128,15 +137,18 @@ function buildSoapRequest(input: CaseInput) {
 参照優先順位：看護計画書（確定版） > 過去記録・メモ > 旧ケアプラン欄
 
 # S（主観情報）出力欄の厳格ルール
-S 欄は専用UI入力欄（看護師の明示入力）のみで構成する：
-1. 【S情報】が提供されている場合：そのまま S に反映する（誤変換補正のみ。言い換え・要約・編集はしない）
-2. 【S情報】がない場合：S は必ず空文字列 ""。以下のいずれからも S 欄を作ってはならない：
-   - 訪問メモの「〜と言った」「〜と発言」「『…』」等の引用や本人発言らしき表現
-   - メモ中の家族・関係者の発言
+S 欄は専用UI入力欄【S情報】の内容のみで構成する：
+1. 【S情報】が提供されている場合：その内容を一字一句変えずに S に反映する（誤変換補正のみ。要約・簡略化・言い換え・語尾変更・発言の統合は一切しない）
+   - 【S情報】内に複数の話者（「S:」=本人、「妻S:」「娘S:」「夫S:」等）がある場合、各話者を区別したまま全員分を S に保持する。家族の発言を省略したり本人の発言と統合したりしてはならない
+   - 話者ラベルは読みやすく整えてよい（「妻S:」→「妻：」等）。ただし発言内容そのものは変えない
+2. 【S情報】がない場合：S は必ず空文字列 ""。以下から S 欄を作ってはならない：
+   - 訪問メモの「〜と言った」「〜と発言」「『…』」等の引用や発言らしき表現（本人・家族とも）
    - 過去記録の S 欄
    - 【AIからの確認質問への回答】【前回からの継続確認事項への回答】の本文（これらは O/A/P 専用）
    - 「特になし」「変わりなし」等のプレースホルダ
-※ S情報を A/P の判断材料に使うことは妨げない
+※ 訪問メモ内に出てくる本人・家族の発言は S に入れず、O に「本人より〜との訴えあり」「家族より〜との報告あり」と客観記載する。S に残したい発言は S情報欄に入力する運用とする
+※ S情報（本人・家族の発言）を A/P の臨床判断材料に使うことは妨げない
+- corrected_s_input フィールドには【S情報】の全文を医療用語の誤変換のみ補正して入れる（削除・要約・簡略化・語尾変更・話者ラベルの除去は一切しない。文字数をほぼ変えない）。【S情報】がなければ ""。S欄の最終内容はシステム側が決定するため、ここで簡略化してはならない
 
 # 作業手順
 1. extracted_facts：全事実ソースから事実を抽出する。1事実=1要素で配列に入れる（複数事実を1要素に詰めない）。各要素の末尾に由来タグを付ける：[メモ] / [S情報] / [AI回答] / [継続確認回答]
@@ -159,21 +171,24 @@ S 欄は専用UI入力欄（看護師の明示入力）のみで構成する：
 - 不種/付種→浮腫、辱層→褥瘡、胎動→体動（呼吸・体位文脈）
 - 〜の正常→〜の性状（便・創部・分泌物等の文脈）
 - 侵入部→刺入部（点滴・カテーテル文脈）
-- 外装→咳嗽（呼吸器症状文脈）
+- 外装/外相→咳嗽（呼吸器症状文脈）
 - 常用→上葉（呼吸器・肺野文脈。中葉・下葉も同音漢字から補正）
 - 複雑音/服雑音→副雑音（呼吸音の「ふくざつおん」）
 - 緊満感は必ず「緊満感」（緊張感・近満感・筋満感は誤り。腹部・乳房の張り）
 - 「こうい」は衣服の着替え文脈では「更衣」
-- 「せんぱつ」は「洗髪」
+- 「せんぱつ」「先発」は「洗髪」
 - 「ちょめい/ちょうめい」は医療文脈では「著明」（著明な浮腫・著明な改善）
+- 併願→閉眼（目を閉じる・覚醒/意識レベル文脈）
+- 肉毛→肉芽（創部・褥瘡・治癒過程文脈）
+- 色/慰労/要ろう→胃瘻（経管栄養・腹部の造設口文脈）
 - 関節痛は「関節の痛み」
 - 医療文脈で意味が通らない漢字は、同音の医療用語に置き換える
 
-# 各項目の書き方
-S：【S情報】があればそのまま（誤変換補正のみ）。なければ ""。訪問メモ・過去記録から引き出さない
-O：場面描写から始め時系列で。バイタル・処置・観察所見を具体的に。AI回答・継続確認回答の客観情報もここに。次回訪問予定は末尾
-A：所見から直接書き始め、前回からの変化を含め、臨床判断で締める。前置き不要
-P：今後のケア方針を3〜5文。「〜していく」「〜を継続する」で統一
+# 各項目の書き方（O/A/P の役割を厳密に分ける）
+S：上記Sルールに従う。【S情報】があれば話者を区別してそのまま（誤変換補正のみ）。なければ ""
+O（客観的事実のみ）：観察した事実・測定値・実施したケアだけを書く。場面描写から時系列で。看護師の判断・解釈・推測（「〜と考える」「〜と思われる」「〜が必要」）は書かず A に回す。文末は「〜あり」「〜なし」「〜を実施」「〜であった」等の事実描写。AI回答・継続確認回答の客観情報もここに。次回訪問予定は末尾
+A（看護師の評価・解釈）：O の事実に対するアセスメントを書く。事実の単純な再掲はしない。前回からの変化・臨床的な意味づけ・リスク評価を述べる。文末は「〜と考えられる」「〜と思われる」「〜の状態である」「〜が必要と考える」等の評価表現。今後の具体的行動（「〜していく」）は書かず P に回す
+P（今後の計画・方針）：今後のケア方針・観察項目・本人や家族への対応を3〜5文。文末は「〜していく」「〜を継続する」「〜を観察していく」「〜を検討する」で統一。評価・解釈（A の内容）は書かない。S情報や A で挙げた課題に対応する計画を必ず含める（例：S情報で疼痛増悪 → P でレスキュー使用検討・主治医相談・再評価）
 
 # 出力長さ
 入力メモの情報量に見合った長さで出力する。下記Few-shot例の長さに引きずられない（Beforeが豊富だったので長文になっただけ）。
@@ -214,12 +229,16 @@ ${rawInput}`;
           type: "string",
           description: "各事実の反映先メモ（S/O/A/P のどこに入れたか）",
         },
+        corrected_s_input: {
+          type: "string",
+          description: "【S情報】がある場合のみ、その全文を医療用語の誤変換だけ補正して返す。削除・要約・簡略化・語尾変更・話者ラベルの除去は一切せず文字数をほぼ変えない。【S情報】がなければ空文字列",
+        },
         S: { type: "string" },
         O: { type: "string" },
         A: { type: "string" },
         P: { type: "string" },
       },
-      required: ["extracted_facts", "coverage_check", "S", "O", "A", "P"],
+      required: ["extracted_facts", "coverage_check", "corrected_s_input", "S", "O", "A", "P"],
     },
   };
 
@@ -328,6 +347,7 @@ function printSection(label: string, body: unknown) {
 interface SoapToolOutput {
   extracted_facts?: string[];
   coverage_check?: string;
+  corrected_s_input?: string;
   S: string;
   O: string;
   A: string;
@@ -388,6 +408,7 @@ function printSoapResult(result: SoapRunResult) {
     const r = result.toolInput;
     printSection(`${tag} 抽出（内部）`, r.extracted_facts ?? []);
     printSection(`${tag} 反映チェック（内部）`, r.coverage_check ?? "");
+    printSection(`${tag} corrected_s_input（内部・誤変換補正版）`, r.corrected_s_input ?? "");
     printSection(`${tag} S`, r.S);
     printSection(`${tag} O`, r.O);
     printSection(`${tag} A`, r.A);
@@ -410,6 +431,17 @@ async function runSoap(tc: TestCase, modelMode: ModelMode): Promise<SoapRunResul
   for (const model of models) {
     const result = await callSoapOnce(prompt, systemPrompt, soapTool, model);
     printSoapResult(result);
+    // 本番 route.ts の S 欄決定ロジックを再現して表示（ラベル一致＋8割長さで補正版採用、崩れたら生S）
+    const sRaw = tc.input.sInput?.trim();
+    if (sRaw && result.toolInput) {
+      const corrected = (result.toolInput.corrected_s_input ?? "").trim();
+      const rawLabels = extractSLabels(sRaw);
+      const corLabels = extractSLabels(corrected);
+      const labelsPreserved =
+        rawLabels.length === corLabels.length && rawLabels.every((l, i) => l === corLabels[i]);
+      const finalS = corrected.length >= sRaw.length * 0.8 && labelsPreserved ? corrected : sRaw;
+      printSection(`[${result.model}] 本番S欄（route.ts再現）`, finalS);
+    }
     results.push(result);
   }
   if (tc.expectations?.soap) printSection("期待する挙動", tc.expectations.soap);
