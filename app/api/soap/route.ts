@@ -232,6 +232,9 @@ ${rawInput}`;
       tool: soapTool,
       // extracted_facts / coverage_check の分だけ余裕を持たせる
       maxTokens: 6144,
+      // 固定 systemプロンプト（指示＋Few-shot 約13,000トークン）を1時間TTLでキャッシュし入力単価を1/10に。
+      // 朝のまとめ書きで複数件・複数スタッフが近接時間に走るためヒット率が見込める（systemは患者非依存の完全固定）。
+      cacheSystemTtl: "1h",
     });
 
     if (!response.toolInput) {

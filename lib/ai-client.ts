@@ -198,12 +198,31 @@ interface GenerateOptions {
   tool?: AiTool;
   /** モデル指定。未指定時は haiku（Claude Haiku 4.5）。テストハーネスでの並走計測用 */
   model?: "haiku" | "sonnet";
+  /** systemプロンプトをPrompt Cacheする際のTTL。指定時のみ cache_control を付与する。
+   *  高頻度ルート（SOAP生成・alerts）で "1h" 推奨。未指定ならキャッシュなし（従来どおり）。 */
+  cacheSystemTtl?: "5m" | "1h";
 }
 
 const MODEL_IDS: Record<NonNullable<GenerateOptions["model"]>, string> = {
   haiku: "claude-haiku-4-5-20251001",
   sonnet: "claude-sonnet-4-6",
 };
+
+/**
+ * systemプロンプトを Anthropic API に渡す形に整える。
+ * ttl 指定時のみ Prompt Cache 用の cache_control を付けた配列形式で返す（精度には影響しないインフラマーカー）。
+ * 未指定なら従来どおり文字列で返す（キャッシュなし）。
+ */
+function buildSystemParam(systemPrompt: string, ttl?: "5m" | "1h") {
+  if (!ttl) return systemPrompt;
+  return [
+    {
+      type: "text" as const,
+      text: systemPrompt,
+      cache_control: { type: "ephemeral" as const, ttl },
+    },
+  ];
+}
 
 /**
  * AI応答を生成する
@@ -242,7 +261,7 @@ export async function generateAiResponse(
           model: modelId,
           max_tokens: maxTokens,
           ...(options?.temperature !== undefined ? { temperature: options.temperature } : {}),
-          ...(systemPrompt ? { system: systemPrompt } : {}),
+          ...(systemPrompt ? { system: buildSystemParam(systemPrompt, options?.cacheSystemTtl) } : {}),
           ...(options?.tool ? {
             tools: [options.tool],
             tool_choice: { type: "tool" as const, name: options.tool.name },

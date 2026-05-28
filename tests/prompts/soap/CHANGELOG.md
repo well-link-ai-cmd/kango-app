@@ -2,6 +2,16 @@
 
 ai-record-tools-design.md の運用に従い、改修ごとに「いつ・何を変えて・何が変わったか」を1行で記録する。
 
+## 2026-05-29 — Prompt Caching 導入（SOAP生成・1時間TTL）
+
+- 変更ファイル: `lib/ai-client.ts`, `app/api/soap/route.ts`, `tests/prompts/soap/run.ts`
+- ai-client.ts に `cacheSystemTtl?: "5m"|"1h"` オプション追加。指定時に system を cache_control（ephemeral, ttl）付き配列で送る（精度影響ゼロのインフラマーカー）
+- soap/route.ts で `cacheSystemTtl: "1h"`。固定system（指示＋Few-shot 約14,000トークン）をキャッシュ
+- 実測（run.ts soap all）: 1件目 cache_creation=14,097、2件目以降 cache_read=14,097。通常入力は可変部分のみ（700〜1,120トークン）に圧縮
+- コスト効果: ヒット時の入力単価 1/10。10件連続で入力コスト約66%削減、ヒット率が高いほど効果大。出力は不変
+- 対象外: questions(alerts)ルートは system が Haiku のキャッシュ最小2,048トークン未満のためキャッシュ不成立（SOAP生成のみで費用の大半をカバー）
+- 注意: 1時間TTLは書き込み2倍課金。単独・散発利用ではミス時に書き込みコストのみ発生しうるが、朝のまとめ書き（複数件・複数スタッフ近接）でヒット率を確保する前提
+
 ## 2026-05-29 — O/A/P区別の厳密化・S話者分類・S情報の完全保持
 
 - 変更ファイル: `app/api/soap/route.ts`, `lib/soap-fewshot.ts`, `tests/prompts/soap/run.ts`, `tests/prompts/soap/cases.json`

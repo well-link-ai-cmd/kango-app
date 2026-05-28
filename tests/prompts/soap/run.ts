@@ -386,6 +386,7 @@ async function callSoapOnce(
     tool: soapTool,
     maxTokens: 6144,
     model,
+    cacheSystemTtl: "1h",
   });
   const elapsedMs = Date.now() - started;
   const toolInput = (response.toolInput as SoapToolOutput | undefined) ?? null;
@@ -416,7 +417,7 @@ function printSoapResult(result: SoapRunResult) {
   }
   const u = result.usage;
   console.log(
-    `\n${tag} tokens: in=${u.input_tokens} out=${u.output_tokens} (cache_read=${u.cache_read_input_tokens}) | ${result.elapsedMs}ms`
+    `\n${tag} tokens: in=${u.input_tokens} out=${u.output_tokens} (cache_read=${u.cache_read_input_tokens} cache_creation=${u.cache_creation_input_tokens}) | ${result.elapsedMs}ms`
   );
 }
 
