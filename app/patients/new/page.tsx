@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { savePatient, saveNursingContents, generateId, soapToText, textToSoap, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem } from "@/lib/storage";
+import { savePatient, saveNursingContents, generateId, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem } from "@/lib/storage";
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2, ClipboardList } from "lucide-react";
 import Link from "next/link";
 
@@ -54,15 +54,13 @@ export default function NewPatientPage() {
     e.preventDefault();
     if (!name.trim()) return alert("氏名を入力してください");
 
-    // テキストからSOAPをパースして保存
+    // 貼り付けた生テキストをそのまま保存（医療用語・言い回しの参考用途。SOAP構造には分解しない）
     const initialSoapRecords = [
       { text: initialSoapText1, visitDate: initialSoapDate1 },
       { text: initialSoapText2, visitDate: initialSoapDate2 },
     ]
       .filter(s => s.text.trim())
-      .map(s => ({ ...textToSoap(s.text), visitDate: s.visitDate }))
-      // SOAP 4フィールドが全部空のレコードは保存しない（再表示時に頭文字だけ残るのを防ぐ）
-      .filter(r => r.S.trim() || r.O.trim() || r.A.trim() || r.P.trim());
+      .map(s => ({ text: s.text.trim(), visitDate: s.visitDate || undefined }));
 
     const patientId = generateId();
     await savePatient({
@@ -121,7 +119,7 @@ export default function NewPatientPage() {
           rows={8}
           className="input-field text-sm"
           style={{ resize: "vertical", lineHeight: "1.8" }}
-          placeholder={"S: 利用者の言葉・訴え\nO: バイタル・観察所見\nA: アセスメント・評価\nP: 今後のケア方針"}
+          placeholder={"カイポケ等の記録をそのまま貼り付けてください（書式自由・コロン不要）。医療用語や言い回しの参考にします。"}
           value={soapText}
           onChange={(e) => setSoapText(e.target.value)}
         />

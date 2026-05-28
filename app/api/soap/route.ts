@@ -60,11 +60,17 @@ export async function POST(req: NextRequest) {
       ? `\n【ケアプラン・担当者会議の方針（旧欄・過渡期参照）】\n${carePlan}\n`
       : "";
 
-  // 過去の訪問記録（アプリ内の記録 + 初期インポート記録を統合）
-  const allPrevRecords = [
-    ...(previousRecords ?? []),
-    ...(initialSoapRecords ?? []),
-  ].slice(0, 3);
+  // 過去の訪問記録（アプリ内の構造化記録のみ。文体手本＋前回P継続に使用）
+  const allPrevRecords = (previousRecords ?? []).slice(0, 3);
+
+  // 基礎情報の導入時SOAP（カイポケ等からの貼り付け生テキスト）：医療用語・言い回し・経過の参考のみ（judgment-only）。
+  // SOAP構造の抽出元・S欄の流用元にはしない。
+  const initialReferenceSection = initialSoapRecords && initialSoapRecords.length > 0
+    ? "\n【過去記録の参考（導入時に貼り付けた記録。医療用語・言い回し・経過の参考に留める。ここから今回のSOAPの事実やS欄を抽出しない）】\n" +
+      (initialSoapRecords as { text: string; visitDate?: string }[])
+        .map((r, i) => `[参考${i + 1}${r.visitDate ? `（${r.visitDate}）` : ""}]\n${r.text}`)
+        .join("\n\n") + "\n"
+    : "";
 
   // 継続確認アラートへの回答（メモの記載漏れを補う事実 → 必ず O/A/P に反映。S 欄には入れない）
   const alertAnswersSection = alertAnswers && alertAnswers.length > 0
@@ -186,13 +192,13 @@ ${SOAP_FEWSHOT_EXAMPLES}`;
     : "";
 
   const prompt = hasSInput
-    ? `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【S情報（看護師入力済み・誤変換のみ補正してそのまま返す）】
+    ? `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${initialReferenceSection}${alertAnswersSection}${answersSection}【S情報（看護師入力済み・誤変換のみ補正してそのまま返す）】
 ${sInput}
 
 【今回の訪問メモ（これをO・A・Pに変換する）】
 ${rawInput}`
 
-    : `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
+    : `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${initialReferenceSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
 ${rawInput}`;
 
   // Tool use でJSON形式を強制。

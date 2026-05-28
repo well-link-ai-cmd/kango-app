@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getPatients, savePatient, getNursingContents, saveNursingContents, generateId, soapToText, textToSoap, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem } from "@/lib/storage";
+import { getPatients, savePatient, getNursingContents, saveNursingContents, generateId, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem } from "@/lib/storage";
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2, ClipboardList, Home } from "lucide-react";
 import Link from "next/link";
 
@@ -69,11 +69,11 @@ export default function EditPatientPage() {
 
       if (patient.initialSoapRecords && patient.initialSoapRecords.length > 0) {
         const r1 = patient.initialSoapRecords[0];
-        setInitialSoapText1(soapToText(r1.S, r1.O, r1.A, r1.P));
+        setInitialSoapText1(r1.text);
         setInitialSoapDate1(r1.visitDate ?? "");
         if (patient.initialSoapRecords.length > 1) {
           const r2 = patient.initialSoapRecords[1];
-          setInitialSoapText2(soapToText(r2.S, r2.O, r2.A, r2.P));
+          setInitialSoapText2(r2.text);
           setInitialSoapDate2(r2.visitDate ?? "");
         }
         setOpenInitialSoap(true);
@@ -127,9 +127,7 @@ export default function EditPatientPage() {
       { text: initialSoapText2, visitDate: initialSoapDate2 },
     ]
       .filter(s => s.text.trim())
-      .map(s => ({ ...textToSoap(s.text), visitDate: s.visitDate }))
-      // SOAP 4フィールドが全部空のレコードは保存しない（再表示時に頭文字だけ残るのを防ぐ）
-      .filter(r => r.S.trim() || r.O.trim() || r.A.trim() || r.P.trim());
+      .map(s => ({ text: s.text.trim(), visitDate: s.visitDate || undefined }));
 
     const validDoctors = doctors.filter(d => d.name.trim() || d.hospital.trim());
     const validCMs = careManagersList.filter(c => c.name.trim() || c.office.trim());
@@ -175,7 +173,7 @@ export default function EditPatientPage() {
           rows={8}
           className="input-field text-sm"
           style={{ resize: "vertical", lineHeight: "1.8" }}
-          placeholder={"S: 利用者の言葉・訴え\nO: バイタル・観察所見\nA: アセスメント・評価\nP: 今後のケア方針"}
+          placeholder={"カイポケ等の記録をそのまま貼り付けてください（書式自由・コロン不要）。医療用語や言い回しの参考にします。"}
           value={soapText}
           onChange={(e) => setSoapText(e.target.value)}
         />

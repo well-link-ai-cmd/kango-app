@@ -79,7 +79,7 @@ interface CaseInput {
   sInput?: string;
   carePlan?: string;
   previousRecords?: PrevRecord[];
-  initialSoapRecords?: PrevRecord[];
+  initialSoapRecords?: { text: string; visitDate?: string }[];
   nursingContentItems?: string[];
   alertAnswers?: { question: string; answer: string }[];
   questionAnswers?: { question: string; answer: string }[];
@@ -98,7 +98,15 @@ function buildSoapRequest(input: CaseInput) {
   // NOTE: テストハーネスでは看護計画書の参照は行わない（実DBアクセスを避けるため）
   // 本番（app/api/soap/route.ts）では patientId から nursing_care_plans を取得して最優先コンテキストとして注入する
   const carePlanSection = carePlan ? `\n【ケアプラン・担当者会議の方針（旧欄・過渡期参照）】\n${carePlan}\n` : "";
-  const allPrevRecords = [...(previousRecords ?? []), ...(initialSoapRecords ?? [])].slice(0, 3);
+  const allPrevRecords = (previousRecords ?? []).slice(0, 3);
+
+  // 導入時SOAP（生テキスト）：医療用語・言い回し・経過の参考のみ（route.ts ミラー）
+  const initialReferenceSection = initialSoapRecords && initialSoapRecords.length > 0
+    ? "\n【過去記録の参考（導入時に貼り付けた記録。医療用語・言い回し・経過の参考に留める。ここから今回のSOAPの事実やS欄を抽出しない）】\n" +
+      initialSoapRecords
+        .map((r, i) => `[参考${i + 1}${r.visitDate ? `（${r.visitDate}）` : ""}]\n${r.text}`)
+        .join("\n\n") + "\n"
+    : "";
 
   const alertAnswersSection = alertAnswers && alertAnswers.length > 0
     ? "\n【前回からの継続確認事項への回答（今回の事実として必ず O/A/P に反映。S 欄には入れない）】\n" +
@@ -206,12 +214,12 @@ ${SOAP_FEWSHOT_EXAMPLES}`;
     : "";
 
   const prompt = hasSInput
-    ? `${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【S情報（看護師入力済み・誤変換のみ補正してそのまま返す）】
+    ? `${prevStyleSection}${prevPlanSection}${carePlanSection}${initialReferenceSection}${alertAnswersSection}${answersSection}【S情報（看護師入力済み・誤変換のみ補正してそのまま返す）】
 ${sInput}
 
 【今回の訪問メモ（これをO・A・Pに変換する）】
 ${rawInput}`
-    : `${prevStyleSection}${prevPlanSection}${carePlanSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
+    : `${prevStyleSection}${prevPlanSection}${carePlanSection}${initialReferenceSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
 ${rawInput}`;
 
   const soapTool = {
@@ -247,9 +255,9 @@ ${rawInput}`;
 
 // -------- questions プロンプト構築（app/api/soap/questions/route.ts をミラー） --------
 function buildQuestionsRequest(input: CaseInput) {
-  const { sInput, rawInput, previousRecords, carePlan, nursingContentItems, initialSoapRecords } = input;
+  const { sInput, rawInput, previousRecords, carePlan, nursingContentItems } = input;
 
-  const allRecords = [...(previousRecords ?? []), ...(initialSoapRecords ?? [])].slice(0, 3);
+  const allRecords = (previousRecords ?? []).slice(0, 3);
 
   if (allRecords.length === 0) return null;
 

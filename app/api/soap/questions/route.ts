@@ -17,21 +17,18 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { patientId, sInput, rawInput, previousRecords, carePlan, nursingContentItems, initialSoapRecords } = body as {
+  const { patientId, sInput, rawInput, previousRecords, carePlan, nursingContentItems } = body as {
     patientId?: string;
     sInput?: string;
     rawInput: string;
     previousRecords: PreviousRecord[];
     carePlan?: string;
     nursingContentItems?: string[];
-    initialSoapRecords?: PreviousRecord[];
   };
 
-  // アプリ内記録 + 初期インポート記録を統合
-  const allRecords = [
-    ...(previousRecords ?? []),
-    ...(initialSoapRecords ?? []),
-  ].slice(0, 3);
+  // アプリ内の構造化記録のみを alerts 検出のソースにする。
+  // 導入時の貼り付け記録（initialSoapRecords）は生テキストの用語参考用途のため alerts には使わない。
+  const allRecords = (previousRecords ?? []).slice(0, 3);
 
   // 看護計画書（確定版・最優先コンテキスト）の取得
   let activeNursingCarePlanSection = "";

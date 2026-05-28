@@ -60,12 +60,9 @@ export interface Patient {
   // ケアプラン・担当者会議内容（AI精度向上用）
   carePlan?: string;          // ケアプラン・担当者会議での方針
 
-  // 導入時に貼り付ける直近のSOAP記録（初回からAIの精度を上げる）
+  // 導入時に貼り付ける直近のSOAP記録（カイポケ等からの貼り付け生テキスト。医療用語・言い回しの参考に使う）
   initialSoapRecords?: {
-    S: string;
-    O: string;
-    A: string;
-    P: string;
+    text: string;
     visitDate?: string;
   }[];
 
@@ -75,6 +72,26 @@ export interface Patient {
 /** SOAP統合テキスト ↔ 個別フィールド変換 */
 export function soapToText(s: string, o: string, a: string, p: string): string {
   return `S: ${s}\nO: ${o}\nA: ${a}\nP: ${p}`;
+}
+
+/**
+ * initialSoapRecords を生テキスト形式に正規化する（後方互換）。
+ * 新形式 { text, visitDate } はそのまま、旧形式 { S,O,A,P, visitDate } は soapToText で text に変換。
+ */
+function normalizeInitialSoap(raw: unknown): { text: string; visitDate?: string }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const records = raw
+    .map((r): { text: string; visitDate?: string } => {
+      if (r && typeof r === "object" && typeof (r as { text?: unknown }).text === "string") {
+        const rec = r as { text: string; visitDate?: string };
+        return { text: rec.text, visitDate: rec.visitDate };
+      }
+      // 旧形式 {S,O,A,P} → 生テキスト化
+      const old = (r ?? {}) as { S?: string; O?: string; A?: string; P?: string; visitDate?: string };
+      return { text: soapToText(old.S ?? "", old.O ?? "", old.A ?? "", old.P ?? ""), visitDate: old.visitDate };
+    })
+    .filter((r) => r.text.trim());
+  return records.length > 0 ? records : undefined;
 }
 
 type SoapLetter = "S" | "O" | "A" | "P";
@@ -263,7 +280,7 @@ function rowToPatient(row: any): Patient {
     doctors: doctors.length > 0 ? doctors : undefined,
     careManagers: careManagers.length > 0 ? careManagers : undefined,
     carePlan: row.care_plan ?? undefined,
-    initialSoapRecords: row.initial_soap_records ?? undefined,
+    initialSoapRecords: normalizeInitialSoap(row.initial_soap_records),
     createdAt: row.created_at,
   };
 }

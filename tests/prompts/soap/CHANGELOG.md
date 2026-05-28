@@ -2,6 +2,19 @@
 
 ai-record-tools-design.md の運用に従い、改修ごとに「いつ・何を変えて・何が変わったか」を1行で記録する。
 
+## 2026-05-29 — 基礎情報の過去SOAPを生テキスト参考化（P4）
+
+- 変更ファイル: `lib/storage.ts`, `app/patients/new/page.tsx`, `app/patients/[id]/edit/page.tsx`, `app/api/soap/route.ts`, `app/api/soap/questions/route.ts`, `tests/prompts/soap/run.ts`
+- 背景: 基礎情報の過去SOAP貼り付けが textToSoap でコロン必須パース →「コロンがないと分解されない」不便。導入時記録は用語・言い回しの参考用途で十分との判断
+- 変更:
+  - storage.ts: initialSoapRecords 型を `{S,O,A,P,visitDate}[]` → `{text,visitDate}[]`。getPatient で normalizeInitialSoap による後方互換（旧形式は soapToText で text 化）
+  - new/edit ページ: textToSoap パース廃止、貼り付け生テキストをそのまま保存。プレースホルダを「カイポケ等から書式自由・コロン不要で貼り付け」に変更
+  - soap/route.ts: initialSoapRecords を「過去記録の参考（用語・言い回し・経過。SOAP事実やS欄の抽出元にしない）」セクションに分離（judgment-only）。previousRecords（アプリ生成・構造化）は従来の文体手本＋前回P継続のまま
+  - questions(alerts): initialSoapRecords を alerts ソースから除外（previousRecords のみ）
+  - run.ts: route.ts にミラー同期、CaseInput 型も更新
+- 後方互換: 既存の {S,O,A,P} データは getPatient で生テキストに自動変換。DBマイグレーション不要（JSONB のまま読み込み時に正規化）
+- systemPrompt は不変（initialReferenceSection は prompt 側）→ Prompt Cache のキャッシュキーに影響なし
+
 ## 2026-05-29 — Prompt Caching 導入（SOAP生成・1時間TTL）
 
 - 変更ファイル: `lib/ai-client.ts`, `app/api/soap/route.ts`, `tests/prompts/soap/run.ts`
