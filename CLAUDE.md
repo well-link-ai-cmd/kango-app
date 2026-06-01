@@ -1,5 +1,30 @@
 # kango-app — AI訪問看護記録アシスト
 
+## 引き継ぎ（最終更新: 2026-06-01 — マルチテナント化 完了・本番投入済み）
+
+### このセッションで完了（PR #17/#18/#19 merged・migration 011/012/013 本番適用＆検証済み）
+- **マルチテナント化（事業所ごとデータ分離）**：
+  - migration 011: `organizations` / `memberships` 新設、全8データテーブルに `org_id`、RLSを「authenticated全許可」→「自分の所属事業所(`current_org_ids()`)だけ」へ全面書換、既存データを「既定の事業所」へ自動移行、セルフ登録RPC（`create_organization`/`join_organization`）。SECURITY DEFINER ヘルパー(`current_org_ids`/`is_org_admin`)で再帰回避。
+  - `lib/storage.ts`: 書き込み系すべてに `org_id` 注入（`getCurrentUserAndOrg`）。reads は RLS 任せ。
+  - `components/AuthGate.tsx`: membership ベースのアクセス判定。未所属→オンボーディング（事業所作成 / 参加コード参加）。011未適用時は旧 allowed_users 方式へフォールバック（`legacyCheckAccess`）。
+  - 本番検証：別Googleアカウントで新事業所作成→患者0件（＝分離成功）を確認済み。
+- migration 012 + 管理画面刷新（`app/admin/page.tsx`）：旧 allowed_users/事業所パスワードUIを撤去。membership ベースに（メンバー一覧・権限変更・削除、参加コード表示＋再発行）。最後の管理者は降格/削除不可。RPC: `list_org_members`/`set_member_role`/`remove_member`/`regenerate_join_code`。
+- migration 013 + メール招待：`org_invites`、`invite_member`/`accept_invites`。ログイン時に自分宛て招待を消化して自動参加（権限指定どおり）。旧 allowed_users の未参加メールを招待へ一括移行（今回きりの再登録）。管理画面に招待UI。
+- **画像自動圧縮**（`lib/storage.ts` `compressImage`）：アップロード前に長辺2000px・JPEG化（2〜4MB→200〜600KB）。Storage節約＋EXIF除去の副次効果。
+- 権限モデル：事業所作成者=自動admin / 参加者=既定user / 管理者が一覧から昇格・降格 or メール招待で事前に権限指定。
+- 機能別レビュー: `docs/レビュー_機能別_2026-06-01.md` ／ 運用補助SQL: `supabase/manual/011_verify.sql`・`011_rollback.sql`
+
+### 次回再開時タスク（ユーザー指示で一旦保留中・メモ）
+1. 🔴 **保存失敗のUI通知**（レビュー §9-1・最優先）：`lib/storage.ts` の save系（`savePatient`/`saveNursingContents`/`savePressureUlcerPlan`/`saveNursingCarePlan`/`saveVisitReport`/`saveInfoProvision`/`addPatientTodo`）が失敗時 `console.error` だけで握りつぶす。例外/戻り値で各画面に「保存に失敗しました」を出す。**マルチテナント化でRLS拒否の経路が増えたため重要度UP**。
+2. **評価リマインダ実装**：看護計画の半年評価を促すリマインダ機能（当初要望の未着手項目）。
+3. **使い方説明書（デモ画像付き）**：`docs/使い方ガイド.md` 作成済（本文＋画像枠）。実スクショは `docs/images/` にユーザーが配置（ファイル名は同ガイド巻末の表参照）。自作SVGモックは不採用で削除済。
+4. **書類アップロードの拡張**：ケアマネのケアプランで **PDF/Excel 添付に対応済**（`ImageUploader` の `allowFiles`、`lib/care-plan-images.ts` の `loadCarePlanAttachments` が 画像=vision / PDF=document として Claude へ渡す。3ルート generate/suggest-labels/generate-issues 反映）。**Excel は保存・閲覧のみで AI読込は未対応**（次の一手：SheetJS等でテキスト化→プロンプト注入）。「看護計画書画面からケアプランを開くショートカット」はユーザー指示で今回見送り。
+
+### マルチテナント関連の残作業（後回し可）
+- Storage の org 分離仕上げ（Stage 3b）：写真パスを `org_id` プレフィックス化＋`storage.objects` RLS＋既存ファイル移行。※現状もDB行（パス置き場）はorg分離済みで実害は出ない設計。
+- レガシー撤去：`app/api/admin/users`・`app/api/admin/password`（UIから不使用）、`app_settings.org_password`、`allowed_users`。`check-access`/`setup` は AuthGate のフォールバックで使用中のため残す。
+- 任意：テスト用に作った「テスト事業所」削除（`delete from organizations where id='...'`。患者0件なら可）。
+
 ## 引き継ぎ（最終更新: 2026-05-29 — SOAP品質改善・Prompt Caching・過去SOAP参考化 master投入完了）
 
 ### 次回再開時の最優先タスク

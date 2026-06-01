@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
-import { loadCarePlanImages } from "@/lib/care-plan-images";
+import { loadCarePlanAttachments } from "@/lib/care-plan-images";
 import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
   const planDate = body.planDate ?? new Date().toISOString().slice(0, 10);
 
   const { recentSoaps, activePlan } = await fetchContext(body.patientId);
-  const carePlanImages = await loadCarePlanImages(body.careManagerPlanImagePaths);
+  const carePlanAttachments = await loadCarePlanAttachments(body.careManagerPlanImagePaths);
 
   const systemPrompt = buildSystemPrompt();
   const userPrompt = buildUserPrompt(body, recentSoaps, activePlan);
@@ -119,7 +119,8 @@ export async function POST(req: NextRequest) {
       timeoutMs: 120000,
       temperature: 0.2,
       tool,
-      images: carePlanImages,
+      images: carePlanAttachments.images,
+      documents: carePlanAttachments.documents,
     });
 
     if (!response.toolInput) {
