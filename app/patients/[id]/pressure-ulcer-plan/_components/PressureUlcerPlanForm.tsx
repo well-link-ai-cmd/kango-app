@@ -23,8 +23,10 @@ import {
   type DesignR,
   type SoapRecord,
   type PressureUlcerPlan,
+  type StoredImage,
 } from "@/lib/storage";
 import { AlertTriangle, Stethoscope, Sparkles, Save, Copy, Loader2, HelpCircle, Calculator, FileEdit } from "lucide-react";
+import ImageUploader from "@/components/ImageUploader";
 import {
   DailyLifeLevelHelp,
   OhScaleHelp,
@@ -192,6 +194,9 @@ export default function PressureUlcerPlanForm({
 
   // ---- DESIGN-R ----
   const [designR, setDesignR] = useState<DesignR>(initialPlan?.designR ?? {});
+
+  // ---- 褥瘡の写真（複製時は引き継がず空にする） ----
+  const [photos, setPhotos] = useState<StoredImage[]>(copyInitial ? [] : initialPlan?.photos ?? []);
 
   // ---- AI生成結果（複製時は空にして再生成を促す） ----
   const [generating, setGenerating] = useState(false);
@@ -362,6 +367,7 @@ export default function PressureUlcerPlanForm({
         pastLocations: buildEffectiveLocations(pastLocations, pastOtherDetail),
         pastHealedDate: pastHealedDate || undefined,
         designR,
+        photos,
         planBed: planBed || undefined,
         planChair: planChair || undefined,
         planSkincare: planSkincare || undefined,
@@ -640,6 +646,17 @@ export default function PressureUlcerPlanForm({
                 </div>
               </div>
             )}
+          </section>
+
+          {/* 褥瘡の写真 */}
+          <section className="card p-5 space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>褥瘡の写真</h2>
+            <ImageUploader
+              value={photos}
+              onChange={setPhotos}
+              prefix={`pressure-ulcer/${patient.id}`}
+              hint="創部の写真を添付できます（記録用に保存）。スマホではカメラ撮影も可能です。"
+            />
           </section>
 
           {/* 過去の褥瘡 */}

@@ -277,6 +277,7 @@ body {
 /* ===== Form Inputs ===== */
 .input-field {
   width: 100%;
+  min-width: 0;
   border: 1.5px solid rgba(0, 0, 0, 0.1);
   border-radius: 12px;
   padding: 12px 16px;

@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, UserPlus, Trash2, KeyRound, Shield, User } from "lucide-react";
+import { ArrowLeft, UserPlus, Trash2, KeyRound, Shield, User, Building2, Copy } from "lucide-react";
 import { getUserRole } from "@/components/AuthGate";
+import { getSupabase } from "@/lib/supabase";
 
 interface AllowedUser {
   id: string;
@@ -19,6 +20,10 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // 事業所の参加コード（マルチテナント）
+  const [org, setOrg] = useState<{ name: string; join_code: string } | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   // ユーザー追加フォーム
   const [newEmail, setNewEmail] = useState("");
@@ -40,7 +45,34 @@ export default function AdminPage() {
       return;
     }
     loadUsers();
+    loadOrg();
   }, [router]);
+
+  // 自分の所属事業所（RLSで自分の事業所のみ返る）。011未適用なら何も表示しない。
+  async function loadOrg() {
+    try {
+      const { data, error } = await getSupabase()
+        .from("organizations")
+        .select("name, join_code")
+        .limit(1);
+      if (!error && data && data.length > 0) {
+        setOrg({ name: data[0].name, join_code: data[0].join_code });
+      }
+    } catch {
+      // 事業所情報なし → 非表示
+    }
+  }
+
+  async function copyJoinCode() {
+    if (!org) return;
+    try {
+      await navigator.clipboard.writeText(org.join_code);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 1500);
+    } catch {
+      // クリップボード不可は無視
+    }
+  }
 
   async function loadUsers() {
     setLoading(true);
@@ -189,6 +221,38 @@ export default function AdminPage() {
             marginBottom: "16px",
           }}>
             {success}
+          </div>
+        )}
+
+        {/* 事業所の参加コード（スタッフ招待） */}
+        {org && (
+          <div className="card" style={{ padding: "20px", marginBottom: "16px" }}>
+            <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <Building2 size={18} style={{ color: "var(--accent-cyan)" }} />
+              事業所の参加コード
+            </h2>
+            <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: "4px" }}>{org.name}</p>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "12px", lineHeight: 1.6 }}>
+              このコードをスタッフに共有すると、ログイン画面の「既存の事業所に参加する」から参加できます。新しいメール登録は不要です（Googleログインのみ）。
+            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <code style={{
+                flex: 1,
+                fontSize: "1.25rem",
+                fontWeight: 700,
+                letterSpacing: "0.15em",
+                padding: "10px 14px",
+                background: "var(--bg-tertiary)",
+                borderRadius: "10px",
+                userSelect: "all",
+              }}>
+                {org.join_code}
+              </code>
+              <button onClick={copyJoinCode} className="btn-outline" style={{ display: "flex", alignItems: "center", gap: "6px", whiteSpace: "nowrap" }}>
+                <Copy size={15} />
+                {codeCopied ? "コピー済み" : "コピー"}
+              </button>
+            </div>
           </div>
         )}
 

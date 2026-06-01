@@ -7,6 +7,36 @@ async function getCurrentUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
+// 所属事業所（org_id）のメモ化キャッシュ。ユーザーが変わったら破棄される。
+let _orgCache: { userId: string; orgId: string | null } | null = null;
+
+/**
+ * 現在のログインユーザーと、その所属事業所（org_id）を取得する。
+ * org_id は memberships テーブルから引く（マルチテナントのデータ分離キー）。
+ * 書き込み系（insert/upsert）で行に org_id を付与するために使う。
+ */
+async function getCurrentUserAndOrg(): Promise<{ userId: string | null; orgId: string | null }> {
+  const { data: { user } } = await getSupabase().auth.getUser();
+  if (!user) return { userId: null, orgId: null };
+  if (_orgCache && _orgCache.userId === user.id) {
+    return { userId: user.id, orgId: _orgCache.orgId };
+  }
+  const { data, error } = await getSupabase()
+    .from("memberships")
+    .select("org_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+  const orgId = !error && data ? (data.org_id as string) : null;
+  _orgCache = { userId: user.id, orgId };
+  return { userId: user.id, orgId };
+}
+
+/** 現在のユーザーの所属事業所ID（未所属なら null）。オンボーディング判定等に使う。 */
+export async function getCurrentOrgId(): Promise<string | null> {
+  return (await getCurrentUserAndOrg()).orgId;
+}
+
 // データ型定義
 
 export type CareLevel =
@@ -28,6 +58,94 @@ export interface CareManagerInfo {
   office: string;     // 事業所名
   address?: string;   // 住所
   phone?: string;     // 電話番号
+}
+
+// === 画像アップロード（Supabase Storage: patient-files バケット）===
+
+// 保存済み画像の参照（バケット内パスを保持。表示時に署名付きURLへ変換）
+export interface StoredImage {
+  path: string;        // バケット内パス
+  uploadedAt: string;  // ISO日時
+  caption?: string;
+}
+
+// ケアマネのケアプラン（写真＋任意テキスト。看護計画立案の最優先資料）
+export interface CareManagerPlan {
+  images: StoredImage[];
+  text?: string;
+}
+
+export const PATIENT_FILES_BUCKET = "patient-files";
+
+const IMAGE_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+/**
+ * アップロード前にブラウザ側で画像を縮小・再圧縮する。
+ * スマホ原寸（2〜4MB）→ 長辺2000px・JPEG品質0.85（おおむね 1/5〜1/10）に。
+ * Supabase Storage の消費量を大きく抑えつつ、書類写真の文字や創部の判別は保てる粒度。
+ * - gif（アニメ）・小さい画像（600KB以下）は劣化を避けてそのまま
+ * - 透過PNGは白背景を敷いてからJPEG化（黒背景化を防止）
+ * - 失敗時・かえって増える場合は元ファイルを返す（安全側）
+ */
+async function compressImage(file: File, maxEdge = 2000, quality = 0.85): Promise<File> {
+  if (typeof document === "undefined") return file;            // サーバー側では何もしない
+  if (!file.type.startsWith("image/") || file.type === "image/gif") return file;
+  if (file.size <= 600 * 1024) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality)
+    );
+    if (!blob || blob.size >= file.size) return file;          // 圧縮で増えるなら元を使う
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "image";
+    return new File([blob], `${baseName}.jpg`, { type: "image/jpeg" });
+  } catch {
+    return file;                                                // 失敗時は元ファイル
+  }
+}
+
+/** 画像を patient-files バケットにアップロードし、参照(StoredImage)を返す */
+export async function uploadPatientImage(file: File, prefix: string): Promise<StoredImage> {
+  const compressed = await compressImage(file);
+  const ext = IMAGE_EXT[compressed.type] ?? (compressed.name.split(".").pop() || "bin");
+  const path = `${prefix}/${generateId()}.${ext}`;
+  const { error } = await getSupabase()
+    .storage.from(PATIENT_FILES_BUCKET)
+    .upload(path, compressed, { contentType: compressed.type || undefined, upsert: false });
+  if (error) throw new Error(`画像のアップロードに失敗しました: ${error.message}`);
+  return { path, uploadedAt: new Date().toISOString() };
+}
+
+/** private バケット表示用の署名付きURL（既定1時間） */
+export async function getImageSignedUrl(path: string, expiresInSec = 3600): Promise<string | null> {
+  const { data, error } = await getSupabase()
+    .storage.from(PATIENT_FILES_BUCKET)
+    .createSignedUrl(path, expiresInSec);
+  if (error) { console.error("getImageSignedUrl error:", error); return null; }
+  return data?.signedUrl ?? null;
+}
+
+/** Storage から画像を削除（参照側配列の更新は呼び出し元で行う） */
+export async function deletePatientImage(path: string): Promise<void> {
+  const { error } = await getSupabase().storage.from(PATIENT_FILES_BUCKET).remove([path]);
+  if (error) console.error("deletePatientImage error:", error);
 }
 
 export interface Patient {
@@ -59,6 +177,9 @@ export interface Patient {
 
   // ケアプラン・担当者会議内容（AI精度向上用）
   carePlan?: string;          // ケアプラン・担当者会議での方針
+
+  // ケアマネのケアプラン（写真をAIが読み取り、看護計画立案の最優先資料にする）
+  careManagerPlan?: CareManagerPlan;
 
   // 導入時に貼り付ける直近のSOAP記録（カイポケ等からの貼り付け生テキスト。医療用語・言い回しの参考に使う）
   initialSoapRecords?: {
@@ -218,7 +339,7 @@ export interface PatientTodo {
 // ---- camelCase <-> snake_case 変換 ----
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function patientToRow(p: Patient, userId?: string): Record<string, any> {
+function patientToRow(p: Patient, userId?: string, orgId?: string): Record<string, any> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row: Record<string, any> = {
     id: p.id,
@@ -240,10 +361,12 @@ function patientToRow(p: Patient, userId?: string): Record<string, any> {
     care_manager_address: p.careManagerAddress ?? null,
     care_manager_phone: p.careManagerPhone ?? null,
     care_plan: p.carePlan ?? null,
+    care_manager_plan: p.careManagerPlan ?? null,
     initial_soap_records: p.initialSoapRecords ?? null,
     created_at: p.createdAt,
   };
   if (userId) row.user_id = userId;
+  if (orgId) row.org_id = orgId;
   return row;
 }
 
@@ -280,13 +403,14 @@ function rowToPatient(row: any): Patient {
     doctors: doctors.length > 0 ? doctors : undefined,
     careManagers: careManagers.length > 0 ? careManagers : undefined,
     carePlan: row.care_plan ?? undefined,
+    careManagerPlan: row.care_manager_plan ?? undefined,
     initialSoapRecords: normalizeInitialSoap(row.initial_soap_records),
     createdAt: row.created_at,
   };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function recordToRow(r: SoapRecord, userId?: string): Record<string, any> {
+function recordToRow(r: SoapRecord, userId?: string, orgId?: string): Record<string, any> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row: Record<string, any> = {
     id: r.id,
@@ -300,6 +424,7 @@ function recordToRow(r: SoapRecord, userId?: string): Record<string, any> {
     created_at: r.createdAt,
   };
   if (userId) row.user_id = userId;
+  if (orgId) row.org_id = orgId;
   return row;
 }
 
@@ -336,8 +461,8 @@ export async function getPatients(): Promise<Patient[]> {
 }
 
 export async function savePatient(patient: Patient): Promise<void> {
-  const userId = await getCurrentUserId();
-  const row = patientToRow(patient, userId ?? undefined);
+  const { userId, orgId } = await getCurrentUserAndOrg();
+  const row = patientToRow(patient, userId ?? undefined, orgId ?? undefined);
   const { error } = await getSupabase()
     .from("patients")
     .upsert(row, { onConflict: "id" });
@@ -377,8 +502,8 @@ export async function getRecordById(id: string): Promise<SoapRecord | null> {
 }
 
 export async function saveRecord(record: SoapRecord): Promise<void> {
-  const userId = await getCurrentUserId();
-  const row = recordToRow(record, userId ?? undefined);
+  const { userId, orgId } = await getCurrentUserAndOrg();
+  const row = recordToRow(record, userId ?? undefined, orgId ?? undefined);
   const { error } = await getSupabase()
     .from("soap_records")
     .upsert(row, { onConflict: "id" });
@@ -474,7 +599,7 @@ export async function getNursingContents(patientId: string): Promise<NursingCont
 }
 
 export async function saveNursingContents(contents: NursingContents): Promise<void> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row: Record<string, any> = {
     patient_id: contents.patientId,
@@ -483,6 +608,7 @@ export async function saveNursingContents(contents: NursingContents): Promise<vo
     updated_at: contents.updatedAt,
   };
   if (userId) row.user_id = userId;
+  if (orgId) row.org_id = orgId;
   const { error } = await getSupabase()
     .from("nursing_contents")
     .upsert(row, { onConflict: "patient_id" });
@@ -573,7 +699,7 @@ export async function getPatientsWithPendingTodos(): Promise<Set<string>> {
 }
 
 export async function addPatientTodo(patientId: string, content: string): Promise<PatientTodo | null> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
   const { data, error } = await getSupabase()
     .from("patient_todos")
     .insert({
@@ -581,6 +707,7 @@ export async function addPatientTodo(patientId: string, content: string): Promis
       content,
       is_done: false,
       created_by: userId,
+      org_id: orgId,
     })
     .select()
     .single();
@@ -702,6 +829,9 @@ export interface PressureUlcerPlan {
   // 評価記録
   evaluationNotes?: string;
 
+  // 褥瘡の写真（Supabase Storage の patient-files バケット）
+  photos?: StoredImage[];
+
   // 下書きフラグ（AI生成前の途中状態）
   isDraft?: boolean;
 
@@ -738,6 +868,7 @@ function pressureUlcerPlanFromRow(row: any): PressureUlcerPlan {
     planNutrition: row.plan_nutrition ?? undefined,
     planRehab: row.plan_rehab ?? undefined,
     evaluationNotes: row.evaluation_notes ?? undefined,
+    photos: row.photos ?? [],
     isDraft: row.is_draft ?? false,
     aiModel: row.ai_model ?? undefined,
     aiPromptVersion: row.ai_prompt_version ?? undefined,
@@ -779,7 +910,7 @@ export async function getPressureUlcerPlan(id: string): Promise<PressureUlcerPla
 export async function savePressureUlcerPlan(
   plan: Omit<PressureUlcerPlan, "id" | "createdAt" | "updatedAt"> & { id?: string }
 ): Promise<PressureUlcerPlan | null> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
 
   const row = {
     ...(plan.id ? { id: plan.id } : {}),
@@ -804,11 +935,13 @@ export async function savePressureUlcerPlan(
     plan_nutrition: plan.planNutrition ?? null,
     plan_rehab: plan.planRehab ?? null,
     evaluation_notes: plan.evaluationNotes ?? null,
+    photos: plan.photos ?? [],
     is_draft: plan.isDraft ?? false,
     ai_model: plan.aiModel ?? null,
     ai_prompt_version: plan.aiPromptVersion ?? null,
     ai_generated_at: plan.aiGeneratedAt ?? null,
     user_id: userId,
+    org_id: orgId,
     ...(plan.id ? {} : { created_by: userId }),
   };
 
@@ -1192,7 +1325,7 @@ export async function getActiveNursingCarePlan(patientId: string): Promise<Nursi
 export async function saveNursingCarePlan(
   plan: Omit<NursingCarePlan, "id" | "createdAt" | "updatedAt"> & { id?: string }
 ): Promise<NursingCarePlan | null> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
 
   const row = {
     ...(plan.id ? { id: plan.id } : {}),
@@ -1218,6 +1351,7 @@ export async function saveNursingCarePlan(
     ai_prompt_version: plan.aiPromptVersion ?? null,
     ai_generated_at: plan.aiGeneratedAt ?? null,
     user_id: userId,
+    org_id: orgId,
     ...(plan.id ? {} : { created_by: userId }),
   };
 
@@ -1441,7 +1575,7 @@ export async function getVisitReportByMonth(
 export async function saveVisitReport(
   report: Omit<VisitReport, "id" | "createdAt" | "updatedAt"> & { id?: string }
 ): Promise<VisitReport | null> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
 
   const rehab = report.rehabAttachment;
   const rehabRow = rehab
@@ -1483,6 +1617,7 @@ export async function saveVisitReport(
     ai_prompt_version: report.aiPromptVersion ?? null,
     ai_generated_at: report.aiGeneratedAt ?? null,
     user_id: userId,
+    org_id: orgId,
     ...(report.id ? {} : { created_by: userId }),
   };
 
@@ -1643,7 +1778,7 @@ export async function getInfoProvision(id: string): Promise<InfoProvision | null
 export async function saveInfoProvision(
   provision: Omit<InfoProvision, "id" | "createdAt" | "updatedAt"> & { id?: string }
 ): Promise<InfoProvision | null> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
 
   const row = {
     ...(provision.id ? { id: provision.id } : {}),
@@ -1674,6 +1809,7 @@ export async function saveInfoProvision(
     ai_prompt_version: provision.aiPromptVersion ?? null,
     ai_generated_at: provision.aiGeneratedAt ?? null,
     user_id: userId,
+    org_id: orgId,
     ...(provision.id ? {} : { created_by: userId }),
   };
 
@@ -1785,16 +1921,20 @@ export async function migrateLocalStorageToSupabase(): Promise<void> {
 
   console.log(`[移行] localStorage → Supabase: 患者${patients.length}件, 記録${records.length}件, 看護内容${nursingContents.length}件`);
 
+  // マルチテナント: 取り込む行に所属事業所（org_id）を付与する
+  const { userId, orgId } = await getCurrentUserAndOrg();
+  if (!orgId) { console.warn("[移行] 所属事業所が未設定のためスキップ"); return; }
+
   // 患者をupsert
   if (patients.length > 0) {
-    const rows = patients.map((p) => patientToRow(p));
+    const rows = patients.map((p) => patientToRow(p, userId ?? undefined, orgId));
     const { error } = await getSupabase().from("patients").upsert(rows, { onConflict: "id" });
     if (error) { console.error("[移行] patients error:", error); return; }
   }
 
   // 記録をupsert
   if (records.length > 0) {
-    const rows = records.map((r) => recordToRow(r));
+    const rows = records.map((r) => recordToRow(r, userId ?? undefined, orgId));
     const { error } = await getSupabase().from("soap_records").upsert(rows, { onConflict: "id" });
     if (error) { console.error("[移行] soap_records error:", error); return; }
   }
@@ -1806,6 +1946,7 @@ export async function migrateLocalStorageToSupabase(): Promise<void> {
       items: nc.items,
       last_analyzed_at: nc.lastAnalyzedAt ?? null,
       updated_at: nc.updatedAt,
+      org_id: orgId,
     }, { onConflict: "patient_id" });
     if (error) { console.error("[移行] nursing_contents error:", error); return; }
   }

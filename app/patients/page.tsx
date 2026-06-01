@@ -40,6 +40,25 @@ function getKanaGroup(patient: Patient): string {
   return "その他";
 }
 
+// 受診予定の日付文字列（"2026-05-29" / "2026年5月29日" など）をタイムスタンプに変換。
+// 「未定」など日付として解釈できないものは null を返す。
+function parseAppointmentDate(dateStr: string): number | null {
+  const m = dateStr?.match(/(\d{4})\s*[-/年.]\s*(\d{1,2})\s*[-/月.]\s*(\d{1,2})/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d.getTime();
+}
+
+// 今日より前（過去）の予定かどうか。今日ちょうどは過去扱いしない。
+// 日付として解釈できない（未定など）場合は false＝表示を維持する。
+function isPastAppointmentDate(dateStr: string): boolean {
+  const t = parseAppointmentDate(dateStr);
+  if (t === null) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return t < today.getTime();
+}
+
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -154,6 +173,19 @@ export default function PatientsPage() {
         (p.nurseInCharge && p.nurseInCharge.toLowerCase().includes(q))
     );
   }, [patients, searchQuery]);
+
+  // 受診予定：過去日付を除外し、近い予定順に並べる（未定は末尾）
+  const upcomingAppointments = appointData
+    ? appointData.appointments
+        .filter((a) => !isPastAppointmentDate(a.date))
+        .sort((a, b) => {
+          const ta = parseAppointmentDate(a.date);
+          const tb = parseAppointmentDate(b.date);
+          if (ta === null) return tb === null ? 0 : 1;
+          if (tb === null) return -1;
+          return ta - tb;
+        })
+    : [];
 
   // あかさたなグループ分け
   const grouped = useMemo(() => {
@@ -362,7 +394,7 @@ export default function PatientsPage() {
                             </button>
                             <button onClick={() => handleOpenAppointments(p)} className="btn-quick">
                               <Calendar size={13} />
-                              受診予定
+                              受診・往診
                             </button>
                             <button
                               onClick={() => handleOpenTodos(p)}
@@ -494,7 +526,7 @@ export default function PatientsPage() {
             <div className="modal-handle" />
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-lg" style={{ color: "var(--text-primary)" }}>
-                {appointPatient.name} 様の受診予定
+                {appointPatient.name} 様の受診・往診予定
               </h2>
               <button onClick={() => { setAppointPatient(null); setAppointData(null); }} className="btn-delete">
                 <X size={20} />
@@ -504,7 +536,7 @@ export default function PatientsPage() {
             {appointLoading && (
               <div className="text-center py-8">
                 <div className="animate-spin inline-block w-6 h-6 border-2 rounded-full" style={{ borderColor: "var(--accent-cyan)", borderTopColor: "transparent" }} />
-                <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>記録からAIが受診予定を抽出中...</p>
+                <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>記録からAIが受診・往診予定を抽出中...</p>
               </div>
             )}
 
@@ -514,8 +546,8 @@ export default function PatientsPage() {
 
             {appointData && (
               <div className="space-y-3">
-                {appointData.appointments.length > 0 ? (
-                  appointData.appointments.map((apt, i) => (
+                {upcomingAppointments.length > 0 ? (
+                  upcomingAppointments.map((apt, i) => (
                     <div
                       key={i}
                       className="p-3 rounded-lg space-y-1"
@@ -532,7 +564,7 @@ export default function PatientsPage() {
                   ))
                 ) : (
                   <p className="text-sm text-center py-4" style={{ color: "var(--text-muted)" }}>
-                    直近の記録から受診予定は見つかりませんでした
+                    今後の受診・往診予定は見つかりませんでした
                   </p>
                 )}
                 {appointData.notes && (

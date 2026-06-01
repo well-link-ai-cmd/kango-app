@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
+import { loadCarePlanImages } from "@/lib/care-plan-images";
 import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 
@@ -32,6 +33,8 @@ interface GenerateIssuesInput {
   labels: string[];                    // suggest-labels で選択されたラベル群
   conferenceMemo?: string;             // 議事録（任意）
   oldCarePlan?: string;                // 旧 carePlan（任意）
+  careManagerPlanImagePaths?: string[]; // ケアマネのケアプラン写真（patient-files のパス）
+  careManagerPlanText?: string;         // ケアマネのケアプラン補足テキスト
   nursingContentItems?: string[];      // 登録済みケア内容（参考、重複許容）
   planDate?: string;                   // 計画作成日 YYYY-MM-DD
 }
@@ -60,6 +63,7 @@ export async function POST(req: NextRequest) {
   const planDate = body.planDate ?? new Date().toISOString().slice(0, 10);
 
   const { recentSoaps, activePlan } = await fetchContext(body.patientId);
+  const carePlanImages = await loadCarePlanImages(body.careManagerPlanImagePaths);
 
   const systemPrompt = buildSystemPrompt();
   const userPrompt = buildUserPrompt(body, recentSoaps, activePlan);
@@ -115,6 +119,7 @@ export async function POST(req: NextRequest) {
       timeoutMs: 120000,
       temperature: 0.2,
       tool,
+      images: carePlanImages,
     });
 
     if (!response.toolInput) {
@@ -223,11 +228,12 @@ function buildSystemPrompt(): string {
 Tool use（generate_nursing_care_issues）のJSONのみ。自然文の前置き・説明は不要。
 
 # 参照優先順位（最重要）
-1. 議事録（conference_memo）— 計画書作成の一次情報。退院前カンファレンス・サービス担当者会議等で合意された支援方針
-2. 直近1ヶ月のSOAP記録 — 実際の問題発生状況・現状反応・症状の数値・頻度
-3. 直前の確定計画書（active_plan）— 継続性・前回からの変化を意識
-4. 患者基本情報（年齢・主病名・要介護度）
-5. 登録済みケア内容 — 既に実施しているケア（**重複は許容。むしろ計画書からケアが抽出される関係なので、計画書側にも記載する**）
+1. ケアマネのケアプラン（添付画像／補足テキスト）— 介護保険では看護計画の起点。生活全般の解決すべき課題・援助目標・サービス内容を最優先で読み取り反映する
+2. 議事録（conference_memo）— 退院前カンファレンス・サービス担当者会議等で合意された支援方針
+3. 直近1ヶ月のSOAP記録 — 実際の問題発生状況・現状反応・症状の数値・頻度
+4. 直前の確定計画書（active_plan）— 継続性・前回からの変化を意識
+5. 患者基本情報（年齢・主病名・要介護度）
+6. 登録済みケア内容 — 既に実施しているケア（**重複は許容。むしろ計画書からケアが抽出される関係なので、計画書側にも記載する**）
 
 # SOAPがない場合の扱い
 新規契約直後は SOAP がほぼないことが普通。議事録と基本情報から立案する。
@@ -304,7 +310,17 @@ function buildUserPrompt(
   recentSoaps: { visitDate: string; S: string; O: string; A: string; P: string }[],
   activePlan: { planDate: string; nursingGoal?: string; issues?: unknown } | null
 ): string {
-  const { patient, labels, conferenceMemo, oldCarePlan, nursingContentItems } = input;
+  const { patient, labels, conferenceMemo, oldCarePlan, nursingContentItems, careManagerPlanText } = input;
+
+  const hasCarePlanImage = !!(input.careManagerPlanImagePaths && input.careManagerPlanImagePaths.length > 0);
+  const careManagerPlanSection =
+    hasCarePlanImage || careManagerPlanText?.trim()
+      ? `\n【ケアマネのケアプラン（最優先で参照）】\n${
+          hasCarePlanImage
+            ? "※添付画像はケアマネが作成したケアプランです。生活全般の解決すべき課題・援助目標・サービス内容を最優先で読み取り、OP/TP/EPに反映すること。\n"
+            : ""
+        }${careManagerPlanText?.trim() ? `補足テキスト：\n${careManagerPlanText.trim()}\n` : ""}`
+      : "";
 
   const labelsSection = `\n【選択された課題ラベル（${labels.length}件・順序維持）】\n` +
     labels.map((l, i) => `  ${i + 1}. ${l}`).join("\n") + "\n";
@@ -338,7 +354,7 @@ function buildUserPrompt(
 - 年齢: ${patient.age}歳
 - 主病名: ${patient.diagnosis}
 - 要介護度: ${patient.careLevel}
-${labelsSection}${conferenceSection}${oldCarePlanSection}${nursingContentSection}${soapSection}${activePlanSection}
+${careManagerPlanSection}${labelsSection}${conferenceSection}${oldCarePlanSection}${nursingContentSection}${soapSection}${activePlanSection}
 上記情報から、選択された各課題ラベルに対し OP（観察）/ TP（ケア）/ EP（指導）を生成し、
 全課題を統合した nursing_goal も記述せよ。
 issues は labels と同じ順序・件数で返すこと。

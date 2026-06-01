@@ -15,7 +15,7 @@
  *   5. 看護師レビュー・編集 → 項目別コピー → 保存
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   saveVisitReport,
@@ -166,6 +166,8 @@ export default function VisitReportForm({ patient, mode, initialReport }: VisitR
   const [visitCalendar, setVisitCalendar] = useState<VisitCalendarEntry[]>(
     initialReport?.visitCalendar ?? []
   );
+  // 初回ロード時のみ保存済みの訪問日暦を尊重し、対象月の変更時は作り直す
+  const visitCalendarInitialLoad = useRef(true);
 
   // AI生成
   const [generating, setGenerating] = useState(false);
@@ -190,8 +192,10 @@ export default function VisitReportForm({ patient, mode, initialReport }: VisitR
       const records = await getRecordsByYearMonth(patient.id, y, m);
       setPeriodRecords(records);
 
-      // 訪問日暦が空なら SOAP の visit_date から看護師訪問（○）を自動生成
-      if (visitCalendar.length === 0 && records.length > 0) {
+      // 初回ロードで保存済みの訪問日暦があればそれを尊重。
+      // それ以外（対象月の変更時・新規作成時）は、選択中の月のSOAPから訪問日暦を作り直す。
+      const keepSaved = visitCalendarInitialLoad.current && (initialReport?.visitCalendar?.length ?? 0) > 0;
+      if (!keepSaved) {
         const seen = new Set<string>();
         const auto: VisitCalendarEntry[] = [];
         for (const r of records) {
@@ -203,6 +207,7 @@ export default function VisitReportForm({ patient, mode, initialReport }: VisitR
         auto.sort((a, b) => a.date.localeCompare(b.date));
         setVisitCalendar(auto);
       }
+      visitCalendarInitialLoad.current = false;
       setRecordsLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -187,6 +187,12 @@ interface AiTool {
   };
 }
 
+/** 画像入力（Claude vision）。base64 データと media_type を渡す。 */
+export interface AiImageInput {
+  mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  data: string; // base64（"data:..." プレフィックスは付けない）
+}
+
 interface GenerateOptions {
   /** 出力トークン上限。褥瘡計画書など長文出力時は8192等に増やす。未指定時は4096 */
   maxTokens?: number;
@@ -201,6 +207,8 @@ interface GenerateOptions {
   /** systemプロンプトをPrompt Cacheする際のTTL。指定時のみ cache_control を付与する。
    *  高頻度ルート（SOAP生成・alerts）で "1h" 推奨。未指定ならキャッシュなし（従来どおり）。 */
   cacheSystemTtl?: "5m" | "1h";
+  /** 画像入力（Claude vision）。指定するとユーザーメッセージ先頭に画像ブロックを付与する。 */
+  images?: AiImageInput[];
 }
 
 const MODEL_IDS: Record<NonNullable<GenerateOptions["model"]>, string> = {
@@ -248,6 +256,19 @@ export async function generateAiResponse(
 
   const modelId = MODEL_IDS[options?.model ?? "haiku"];
 
+  // 画像（vision）があればユーザーメッセージを「画像ブロック…＋テキスト」の配列にする。
+  // 画像なしなら従来どおり文字列（後方互換）。
+  const userContent =
+    options?.images && options.images.length > 0
+      ? [
+          ...options.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mediaType, data: img.data },
+          })),
+          { type: "text" as const, text: prompt },
+        ]
+      : prompt;
+
   // 一過性エラー（Claude 過負荷・レート制限・ネットワーク瞬断）は指数バックオフで自動リトライ。
   // 看護師は画面の前で待たされているので、リトライ回数は控えめ（合計3回試行＝2回までリトライ）に抑える。
   const maxRetries = 2;
@@ -266,7 +287,7 @@ export async function generateAiResponse(
             tools: [options.tool],
             tool_choice: { type: "tool" as const, name: options.tool.name },
           } : {}),
-          messages: [{ role: "user", content: prompt }],
+          messages: [{ role: "user", content: userContent }],
         }),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`AI応答がタイムアウトしました（${Math.round(timeoutMs / 1000)}秒）。再度お試しください。`)), timeoutMs)

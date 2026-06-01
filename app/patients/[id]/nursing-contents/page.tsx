@@ -33,6 +33,8 @@ export default function NursingContentsPage() {
   const [editingRemovalText, setEditingRemovalText] = useState("");
 
   const [extractPreview, setExtractPreview] = useState<string[] | null>(null);
+  const [editingPreviewIndex, setEditingPreviewIndex] = useState<number | null>(null);
+  const [editingPreviewText, setEditingPreviewText] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -161,6 +163,35 @@ export default function NursingContentsPage() {
     await saveNursingContents(updated);
     setContents(updated);
     setExtractPreview(null);
+  }
+
+  function handleStartEditPreview(index: number, text: string) {
+    setEditingPreviewIndex(index);
+    setEditingPreviewText(text);
+  }
+
+  function handleSavePreviewEdit(index: number) {
+    if (!extractPreview) return;
+    const trimmed = editingPreviewText.trim();
+    if (!trimmed) {
+      setError("項目名は空にできません");
+      return;
+    }
+    setExtractPreview(extractPreview.map((t, i) => (i === index ? trimmed : t)));
+    setEditingPreviewIndex(null);
+    setEditingPreviewText("");
+  }
+
+  function handleCancelPreviewEdit() {
+    setEditingPreviewIndex(null);
+    setEditingPreviewText("");
+  }
+
+  function handleDeletePreview(index: number) {
+    if (!extractPreview) return;
+    setExtractPreview(extractPreview.filter((_, i) => i !== index));
+    setEditingPreviewIndex(null);
+    setEditingPreviewText("");
   }
 
   async function handleDiffAnalysis() {
@@ -339,7 +370,7 @@ export default function NursingContentsPage() {
           <div className="alert-error animate-fade-in">{error}</div>
         )}
 
-        {!hasContents && !extractPreview && (
+        {!contents && !extractPreview && (
           <div className="card p-6 text-center space-y-4 animate-fade-in-up">
             <div style={{ color: "var(--accent-cyan)" }}>
               <Sparkles size={40} className="mx-auto mb-2" />
@@ -388,26 +419,73 @@ export default function NursingContentsPage() {
               AIが抽出した看護内容（{extractPreview.length}件）
             </p>
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              確認して登録してください。登録後に手動で追加・削除できます。
+              登録前に内容を編集したり、不要な項目を削除できます。確認できたら「この内容で登録する」を押してください。
             </p>
-            <ul className="space-y-2">
-              {extractPreview.map((item, i) => (
-                <li
-                  key={i}
-                  className="flex items-center gap-3 p-3 rounded-lg"
-                  style={{ background: "var(--bg-tertiary)" }}
-                >
-                  <Check size={16} style={{ color: "var(--accent-success)" }} />
-                  <span className="text-sm" style={{ color: "var(--text-primary)" }}>{item}</span>
-                </li>
-              ))}
-            </ul>
+            {extractPreview.length > 0 ? (
+              <ul className="space-y-2">
+                {extractPreview.map((item, i) => (
+                  <li
+                    key={i}
+                    className="flex items-center gap-2 p-3 rounded-lg"
+                    style={{ background: "var(--bg-tertiary)" }}
+                  >
+                    {editingPreviewIndex === i ? (
+                      <>
+                        <input
+                          type="text"
+                          className="input-field flex-1 text-sm"
+                          value={editingPreviewText}
+                          onChange={(e) => setEditingPreviewText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") { e.preventDefault(); handleSavePreviewEdit(i); }
+                            if (e.key === "Escape") { e.preventDefault(); handleCancelPreviewEdit(); }
+                          }}
+                          autoFocus
+                        />
+                        <button onClick={() => handleSavePreviewEdit(i)} className="btn-outline" style={{ padding: "0.25rem 0.5rem" }} aria-label="保存">
+                          <Save size={14} />
+                        </button>
+                        <button onClick={handleCancelPreviewEdit} className="btn-outline" style={{ padding: "0.25rem 0.5rem" }} aria-label="キャンセル">
+                          <X size={14} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={16} style={{ color: "var(--accent-success)", flexShrink: 0 }} />
+                        <button
+                          onClick={() => handleStartEditPreview(i, item)}
+                          className="flex-1 text-sm text-left"
+                          style={{ color: "var(--text-primary)", background: "transparent", border: "none", padding: 0, cursor: "text" }}
+                        >
+                          {item}
+                        </button>
+                        <button onClick={() => handleStartEditPreview(i, item)} className="btn-outline" style={{ padding: "0.25rem 0.5rem" }} aria-label="編集" title="編集">
+                          <Pencil size={14} />
+                        </button>
+                        <button onClick={() => handleDeletePreview(i)} className="btn-delete" aria-label="削除" title="削除">
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-center py-2" style={{ color: "var(--text-muted)" }}>
+                すべて削除されました。「やめる」で戻れます。
+              </p>
+            )}
             <div className="flex gap-3">
-              <button onClick={handleConfirmExtract} className="btn-save flex-1">
-                この内容で登録する
+              <button
+                onClick={handleConfirmExtract}
+                disabled={extractPreview.length === 0}
+                className="btn-save flex-1"
+                style={{ opacity: extractPreview.length === 0 ? 0.5 : 1 }}
+              >
+                この内容で登録する（{extractPreview.length}件）
               </button>
               <button
-                onClick={() => setExtractPreview(null)}
+                onClick={() => { setExtractPreview(null); setEditingPreviewIndex(null); setEditingPreviewText(""); }}
                 className="btn-outline"
               >
                 やめる
@@ -416,8 +494,9 @@ export default function NursingContentsPage() {
           </div>
         )}
 
-        {hasContents && (
+        {contents && !extractPreview && (
           <>
+            {hasContents && (
             <div className="card overflow-hidden animate-fade-in-up">
               <div className="px-5 py-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
                 <p className="font-semibold" style={{ color: "var(--text-primary)" }}>
@@ -482,6 +561,7 @@ export default function NursingContentsPage() {
                 ))}
               </ul>
             </div>
+            )}
 
             <div className="card p-5 animate-fade-in-up">
               <p className="input-label">ケア項目を追加（複数行・箇条書き対応）</p>
@@ -655,44 +735,6 @@ export default function NursingContentsPage() {
               </div>
             )}
           </>
-        )}
-
-        {contents && contents.items.length === 0 && !extractPreview && (
-          <div className="card p-5 animate-fade-in-up">
-            <p className="input-label">ケア項目を追加（複数行・箇条書き対応）</p>
-            <textarea
-              rows={4}
-              className="input-field text-sm"
-              style={{ resize: "vertical", fontFamily: "inherit" }}
-              placeholder="1行1項目。複数項目を一度にペースト可能。&#10;例：&#10;・バイタル測定（血圧・脈拍・体温・SpO2）&#10;・排便状態の確認&#10;・ROM訓練"
-              value={newItemsText}
-              onChange={(e) => setNewItemsText(e.target.value)}
-            />
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                {parseInputLines(newItemsText).length} 件追加されます
-              </span>
-              <button
-                onClick={handleAddItems}
-                disabled={parseInputLines(newItemsText).length === 0}
-                className="btn-outline"
-                style={{ borderRadius: "12px" }}
-              >
-                <Plus size={16} />
-                追加
-              </button>
-            </div>
-            {records.length > 0 && (
-              <button
-                onClick={handleExtract}
-                disabled={loading}
-                className="btn-outline w-full justify-center mt-3"
-              >
-                <Sparkles size={16} />
-                {loading ? "AI分析中..." : "AIで自動抽出する"}
-              </button>
-            )}
-          </div>
         )}
       </main>
     </div>
