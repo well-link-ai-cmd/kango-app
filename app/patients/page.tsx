@@ -394,7 +394,7 @@ export default function PatientsPage() {
                             </button>
                             <button onClick={() => handleOpenAppointments(p)} className="btn-quick">
                               <Calendar size={13} />
-                              受診予定
+                              受診・往診
                             </button>
                             <button
                               onClick={() => handleOpenTodos(p)}
@@ -526,7 +526,7 @@ export default function PatientsPage() {
             <div className="modal-handle" />
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-lg" style={{ color: "var(--text-primary)" }}>
-                {appointPatient.name} 様の受診予定
+                {appointPatient.name} 様の受診・往診予定
               </h2>
               <button onClick={() => { setAppointPatient(null); setAppointData(null); }} className="btn-delete">
                 <X size={20} />
@@ -536,7 +536,7 @@ export default function PatientsPage() {
             {appointLoading && (
               <div className="text-center py-8">
                 <div className="animate-spin inline-block w-6 h-6 border-2 rounded-full" style={{ borderColor: "var(--accent-cyan)", borderTopColor: "transparent" }} />
-                <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>記録からAIが受診予定を抽出中...</p>
+                <p className="text-sm mt-2" style={{ color: "var(--text-muted)" }}>記録からAIが受診・往診予定を抽出中...</p>
               </div>
             )}
 
@@ -564,7 +564,7 @@ export default function PatientsPage() {
                   ))
                 ) : (
                   <p className="text-sm text-center py-4" style={{ color: "var(--text-muted)" }}>
-                    今後の受診予定は見つかりませんでした
+                    今後の受診・往診予定は見つかりませんでした
                   </p>
                 )}
                 {appointData.notes && (
