@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, getPatientTodos, getPatientsWithPendingTodos, addPatientTodo, togglePatientTodo, deletePatientTodo, type Patient, type PatientTodo } from "@/lib/storage";
+import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, getPatientTodos, getPatientsWithPendingTodos, getPatientsNeedingPlanReview, addPatientTodo, togglePatientTodo, deletePatientTodo, type Patient, type PatientTodo } from "@/lib/storage";
 import { getSupabase } from "@/lib/supabase";
 import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut, Settings, ListTodo, Plus, Check, BookOpen } from "lucide-react";
 import { getUserRole } from "@/components/AuthGate";
@@ -80,12 +80,14 @@ export default function PatientsPage() {
   const [newTodoText, setNewTodoText] = useState("");
   const [todoLoading, setTodoLoading] = useState(false);
   const [pendingTodoPatientIds, setPendingTodoPatientIds] = useState<Set<string>>(new Set());
+  const [planReviewPatientIds, setPlanReviewPatientIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     (async () => {
       await migrateLocalStorageToSupabase();
       setPatients(await getPatients());
       setPendingTodoPatientIds(await getPatientsWithPendingTodos());
+      setPlanReviewPatientIds(await getPatientsNeedingPlanReview());
     })();
   }, []);
 
@@ -374,6 +376,9 @@ export default function PatientsPage() {
                                   <span className={`badge ${CARE_LEVEL_BADGE[p.careLevel] ?? "badge-gray"}`}>
                                     {p.careLevel}
                                   </span>
+                                )}
+                                {planReviewPatientIds.has(p.id) && (
+                                  <span className="badge badge-orange" title="看護計画の評価時期です">評価時期</span>
                                 )}
                               </div>
                               <p className="text-sm mt-0.5" style={{ color: "var(--text-secondary)" }}>{p.age}歳　{p.diagnosis}</p>
