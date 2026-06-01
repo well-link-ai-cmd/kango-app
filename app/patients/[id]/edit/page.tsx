@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getPatients, savePatient, getNursingContents, saveNursingContents, generateId, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem, type StoredImage } from "@/lib/storage";
+import { getPatients, savePatient, getNursingContents, saveNursingContents, generateId, SAVE_FAIL_MESSAGE, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem, type StoredImage } from "@/lib/storage";
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2, ClipboardList, Home } from "lucide-react";
 import Link from "next/link";
 import ImageUploader from "@/components/ImageUploader";
@@ -141,7 +141,7 @@ export default function EditPatientPage() {
 
     const validDoctors = doctors.filter(d => d.name.trim() || d.hospital.trim());
     const validCMs = careManagersList.filter(c => c.name.trim() || c.office.trim());
-    await savePatient({
+    const ok = await savePatient({
       ...existing,
       name: name.trim(),
       nameKana: nameKana.trim() || undefined,
@@ -158,13 +158,15 @@ export default function EditPatientPage() {
           : undefined,
       initialSoapRecords: initialSoapRecords.length > 0 ? initialSoapRecords : undefined,
     });
+    if (!ok) { alert(SAVE_FAIL_MESSAGE); return; }
 
     // ケア内容リストを保存
-    await saveNursingContents({
+    const ncOk = await saveNursingContents({
       patientId: id,
       items: nursingContentItems,
       updatedAt: new Date().toISOString(),
     });
+    if (!ncOk) { alert(SAVE_FAIL_MESSAGE); return; }
 
     router.push(`/patients/${id}`);
   }

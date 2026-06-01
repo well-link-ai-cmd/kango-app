@@ -460,13 +460,19 @@ export async function getPatients(): Promise<Patient[]> {
   });
 }
 
-export async function savePatient(patient: Patient): Promise<void> {
+/** 保存失敗時にユーザーへ出す共通メッセージ */
+export const SAVE_FAIL_MESSAGE =
+  "保存に失敗しました。通信状況をご確認のうえ、もう一度お試しください。問題が続く場合は管理者にご連絡ください。";
+
+/** 保存成功なら true。失敗時は false（呼び出し側で SAVE_FAIL_MESSAGE 等を表示する） */
+export async function savePatient(patient: Patient): Promise<boolean> {
   const { userId, orgId } = await getCurrentUserAndOrg();
   const row = patientToRow(patient, userId ?? undefined, orgId ?? undefined);
   const { error } = await getSupabase()
     .from("patients")
     .upsert(row, { onConflict: "id" });
-  if (error) console.error("savePatient error:", error);
+  if (error) { console.error("savePatient error:", error); return false; }
+  return true;
 }
 
 export async function deletePatient(id: string): Promise<void> {
@@ -598,7 +604,7 @@ export async function getNursingContents(patientId: string): Promise<NursingCont
   };
 }
 
-export async function saveNursingContents(contents: NursingContents): Promise<void> {
+export async function saveNursingContents(contents: NursingContents): Promise<boolean> {
   const { userId, orgId } = await getCurrentUserAndOrg();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row: Record<string, any> = {
@@ -612,7 +618,8 @@ export async function saveNursingContents(contents: NursingContents): Promise<vo
   const { error } = await getSupabase()
     .from("nursing_contents")
     .upsert(row, { onConflict: "patient_id" });
-  if (error) console.error("saveNursingContents error:", error);
+  if (error) { console.error("saveNursingContents error:", error); return false; }
+  return true;
 }
 
 export async function deleteNursingContents(patientId: string): Promise<void> {

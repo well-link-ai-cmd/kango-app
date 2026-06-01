@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getPatients, getRecords, saveRecord, generateId, soapToText, textToSoap, getNursingContents, saveNursingContents, type Patient, type SoapRecord, type NursingContentItem } from "@/lib/storage";
+import { getPatients, getRecords, saveRecord, generateId, soapToText, textToSoap, getNursingContents, saveNursingContents, SAVE_FAIL_MESSAGE, type Patient, type SoapRecord, type NursingContentItem } from "@/lib/storage";
 import { saveDraft, loadDraft, clearDraft, isDraftEmpty, formatDraftTime, type SoapDraft } from "@/lib/draft-storage";
 import { ArrowLeft, Sparkles, Save, AlertTriangle, MessageSquare, Check, Plus, X, Home, FileText, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -296,7 +296,8 @@ export default function NewRecordPage() {
     const updatedItems = [...nursingItems, newItem];
     setNursingItems(updatedItems);
     setDiffResult({ ...diffResult, additions: diffResult.additions.filter(a => a !== text) });
-    await saveNursingContents({ patientId: id, items: updatedItems, updatedAt: new Date().toISOString() });
+    const ok = await saveNursingContents({ patientId: id, items: updatedItems, updatedAt: new Date().toISOString() });
+    if (!ok) alert(SAVE_FAIL_MESSAGE);
   }
 
   async function handleAcceptRemoval(text: string) {
@@ -304,7 +305,8 @@ export default function NewRecordPage() {
     const updatedItems = nursingItems.filter(item => item.text !== text);
     setNursingItems(updatedItems);
     setDiffResult({ ...diffResult, removals: diffResult.removals.filter(r => r !== text) });
-    await saveNursingContents({ patientId: id, items: updatedItems, updatedAt: new Date().toISOString() });
+    const ok = await saveNursingContents({ patientId: id, items: updatedItems, updatedAt: new Date().toISOString() });
+    if (!ok) alert(SAVE_FAIL_MESSAGE);
   }
 
   function handleSkipDiff() {
