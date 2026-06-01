@@ -1321,6 +1321,81 @@ export async function getActiveNursingCarePlan(patientId: string): Promise<Nursi
   return data ? nursingCarePlanFromRow(data) : null;
 }
 
+// ---- 看護計画の評価リマインダ（事業所ごとに評価周期を設定） ----
+
+/** 評価周期の既定値（月）。事業所が未設定の場合に使用 */
+export const DEFAULT_CARE_PLAN_REVIEW_MONTHS = 6;
+
+/** 計画の「最終評価日」= 作成日(planDate) と 各課題の評価日(evaluatedAt) の最新 */
+function nursingCarePlanLastReview(plan: NursingCarePlan): Date {
+  let latest = new Date(plan.planDate);
+  if (isNaN(latest.getTime())) latest = new Date(plan.createdAt);
+  for (const iss of plan.issues) {
+    if (iss.evaluatedAt) {
+      const d = new Date(iss.evaluatedAt);
+      if (!isNaN(d.getTime()) && d > latest) latest = d;
+    }
+  }
+  return latest;
+}
+
+/** 計画が評価時期か（最終評価から months ヶ月以上経過） */
+export function isCarePlanReviewDue(
+  plan: NursingCarePlan,
+  months: number = DEFAULT_CARE_PLAN_REVIEW_MONTHS
+): boolean {
+  const due = nursingCarePlanLastReview(plan);
+  due.setMonth(due.getMonth() + (months > 0 ? months : DEFAULT_CARE_PLAN_REVIEW_MONTHS));
+  return due.getTime() <= Date.now();
+}
+
+/** 最終評価日からの経過月数（概算・バナー表示用） */
+export function monthsSinceCarePlanReview(plan: NursingCarePlan): number {
+  const last = nursingCarePlanLastReview(plan);
+  const now = new Date();
+  return (now.getFullYear() - last.getFullYear()) * 12 + (now.getMonth() - last.getMonth());
+}
+
+/** 事業所に設定された評価周期（月）。未設定なら既定（6）。 */
+export async function getCarePlanReviewMonths(): Promise<number> {
+  const { data, error } = await getSupabase()
+    .from("organizations")
+    .select("care_plan_review_months")
+    .limit(1)
+    .maybeSingle();
+  const m = !error && data ? Number((data as { care_plan_review_months?: number }).care_plan_review_months) : NaN;
+  return Number.isFinite(m) && m > 0 ? m : DEFAULT_CARE_PLAN_REVIEW_MONTHS;
+}
+
+/** 評価周期（月）を事業所に設定（管理者のみ）。 */
+export async function setCarePlanReviewMonths(months: number): Promise<boolean> {
+  const { error } = await getSupabase().rpc("set_care_plan_review_months", { months });
+  if (error) { console.error("setCarePlanReviewMonths error:", error); return false; }
+  return true;
+}
+
+/** 評価時期を迎えた「現在有効な看護計画」を持つ患者IDの集合（ホームのバッジ用） */
+export async function getPatientsNeedingPlanReview(): Promise<Set<string>> {
+  const months = await getCarePlanReviewMonths();
+  const { data, error } = await getSupabase()
+    .from("nursing_care_plans")
+    .select("*")
+    .eq("is_draft", false)
+    .order("plan_date", { ascending: false });
+  if (error) { console.error("getPatientsNeedingPlanReview error:", error); return new Set(); }
+  // 患者ごとに最新の有効計画（plan_date 降順なので先頭）を採用し、評価時期を判定
+  const latestByPatient = new Map<string, NursingCarePlan>();
+  for (const row of data ?? []) {
+    const plan = nursingCarePlanFromRow(row);
+    if (!latestByPatient.has(plan.patientId)) latestByPatient.set(plan.patientId, plan);
+  }
+  const due = new Set<string>();
+  for (const [pid, plan] of latestByPatient) {
+    if (isCarePlanReviewDue(plan, months)) due.add(pid);
+  }
+  return due;
+}
+
 /** 新規作成（id未指定）または更新（id指定） */
 export async function saveNursingCarePlan(
   plan: Omit<NursingCarePlan, "id" | "createdAt" | "updatedAt"> & { id?: string }

@@ -14,6 +14,9 @@ import {
   deleteNursingCarePlan,
   savePatient,
   issueToDisplayText,
+  isCarePlanReviewDue,
+  monthsSinceCarePlanReview,
+  getCarePlanReviewMonths,
   type Patient,
   type NursingCarePlan,
 } from "@/lib/storage";
@@ -40,6 +43,7 @@ export default function NursingCarePlanListPage() {
   const [loaded, setLoaded] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [reviewMonths, setReviewMonths] = useState(6);
 
   useEffect(() => {
     (async () => {
@@ -47,6 +51,7 @@ export default function NursingCarePlanListPage() {
       setPatient(p);
       const ps = await getNursingCarePlans(id);
       setPlans(ps);
+      setReviewMonths(await getCarePlanReviewMonths());
       setLoaded(true);
     })();
   }, [id]);
@@ -127,6 +132,19 @@ export default function NursingCarePlanListPage() {
           <PlusCircle size={22} />
           新しい看護計画書を作成する
         </Link>
+
+        {/* 評価時期リマインダ（事業所の評価周期を過ぎた有効計画） */}
+        {activePlan && isCarePlanReviewDue(activePlan, reviewMonths) && (
+          <div className="card p-4 mb-4" style={{ background: "rgba(255,140,0,0.08)", borderLeft: "3px solid #f59e0b" }}>
+            <p className="text-sm font-semibold mb-1" style={{ color: "#B45309" }}>
+              ⏰ 評価の時期です（{reviewMonths}ヶ月経過）
+            </p>
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+              現在有効な計画書（作成日 {activePlan.planDate}）は、前回評価から約{monthsSinceCarePlanReview(activePlan)}ヶ月が経過しています。
+              記録をもとに評価を行い、必要なら計画を見直してください（既存計画を複製して新規作成／各課題に評価を記入）。
+            </p>
+          </div>
+        )}
 
         {/* 旧ケアプラン欄の移行バナー（過渡期） */}
         {patient.carePlan?.trim() && (

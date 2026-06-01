@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Shield, User, Trash2, Building2, Copy, RefreshCw, Mail, X } from "lucide-react";
+import { ArrowLeft, Shield, User, Trash2, Building2, Copy, RefreshCw, Mail, X, CalendarClock } from "lucide-react";
 import { getUserRole } from "@/components/AuthGate";
 import { getSupabase } from "@/lib/supabase";
+import { setCarePlanReviewMonths } from "@/lib/storage";
 
 interface Member {
   user_id: string;
@@ -34,6 +35,9 @@ export default function AdminPage() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"user" | "admin">("user");
+  const [reviewMonths, setReviewMonths] = useState<number>(6);
+  const [customInput, setCustomInput] = useState("");
+  const [savingReview, setSavingReview] = useState(false);
 
   useEffect(() => {
     const role = getUserRole();
@@ -59,11 +63,27 @@ export default function AdminPage() {
   async function loadOrg() {
     const { data, error } = await getSupabase()
       .from("organizations")
-      .select("name, join_code")
+      .select("name, join_code, care_plan_review_months")
       .limit(1);
     if (!error && data && data.length > 0) {
       setOrg({ name: data[0].name, join_code: data[0].join_code });
+      const m = Number(data[0].care_plan_review_months);
+      if (Number.isFinite(m) && m > 0) {
+        setReviewMonths(m);
+        setCustomInput([1, 3, 6, 12].includes(m) ? "" : String(m));
+      }
     }
+  }
+
+  async function saveReview(months: number) {
+    setError(""); setSuccess(""); setSavingReview(true);
+    try {
+      const ok = await setCarePlanReviewMonths(months);
+      if (!ok) { setError("評価周期の保存に失敗しました（migration 014 が未適用の可能性があります）"); return; }
+      setReviewMonths(months);
+      setCustomInput([1, 3, 6, 12].includes(months) ? "" : String(months));
+      setSuccess(`看護計画の評価周期を ${months}ヶ月 に設定しました`);
+    } finally { setSavingReview(false); }
   }
 
   async function loadMembers() {
@@ -237,6 +257,53 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+
+        {/* 看護計画の評価周期 */}
+        <div className="card" style={{ padding: "20px", marginBottom: "16px" }}>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <CalendarClock size={18} style={{ color: "var(--accent-cyan)" }} />
+            看護計画の評価周期
+          </h2>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "12px", lineHeight: 1.6 }}>
+            有効な看護計画書が、最終評価（作成日または課題の評価日）からこの期間を過ぎると、利用者一覧と看護計画書ページに「評価時期」のお知らせを表示します。
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+            {[1, 3, 6, 12].map((m) => (
+              <button
+                key={m}
+                onClick={() => saveReview(m)}
+                disabled={savingReview}
+                className="btn-outline"
+                style={{
+                  fontSize: "0.85rem", padding: "6px 14px",
+                  ...(reviewMonths === m ? { background: "var(--gradient-main)", color: "#fff", border: "none", fontWeight: 700 } : {}),
+                  opacity: savingReview ? 0.5 : 1,
+                }}
+              >
+                {m}ヶ月
+              </button>
+            ))}
+            <input
+              type="number" min={1} max={60}
+              value={customInput}
+              placeholder="カスタム"
+              onChange={(e) => setCustomInput(e.target.value)}
+              style={{ width: "92px", padding: "6px 10px", borderRadius: "8px", border: "1px solid var(--border,#e3eaee)", fontSize: "0.85rem" }}
+            />
+            <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>ヶ月</span>
+            <button
+              onClick={() => { const n = Number(customInput); if (n >= 1 && n <= 60) saveReview(n); }}
+              disabled={savingReview || !(Number(customInput) >= 1 && Number(customInput) <= 60)}
+              className="btn-outline"
+              style={{ fontSize: "0.8rem", padding: "6px 12px", opacity: savingReview || !(Number(customInput) >= 1 && Number(customInput) <= 60) ? 0.5 : 1 }}
+            >
+              設定
+            </button>
+          </div>
+          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "10px" }}>
+            現在の設定：<strong>{reviewMonths}ヶ月</strong>（既定6ヶ月）
+          </p>
+        </div>
 
         {/* メール招待（事前登録） */}
         <div className="card" style={{ padding: "20px", marginBottom: "16px" }}>
