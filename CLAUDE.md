@@ -17,7 +17,8 @@
 ### 次回再開時タスク（ユーザー指示で一旦保留中・メモ）
 1. 🔴 **保存失敗のUI通知**（レビュー §9-1・最優先）：`lib/storage.ts` の save系（`savePatient`/`saveNursingContents`/`savePressureUlcerPlan`/`saveNursingCarePlan`/`saveVisitReport`/`saveInfoProvision`/`addPatientTodo`）が失敗時 `console.error` だけで握りつぶす。例外/戻り値で各画面に「保存に失敗しました」を出す。**マルチテナント化でRLS拒否の経路が増えたため重要度UP**。
 2. **評価リマインダ実装**：看護計画の半年評価を促すリマインダ機能（当初要望の未着手項目）。
-3. **使い方説明書（デモ画像付き）**：2026-06-01セッションで着手。
+3. **使い方説明書（デモ画像付き）**：`docs/使い方ガイド.md` 作成済（本文＋画像枠）。実スクショは `docs/images/` にユーザーが配置（ファイル名は同ガイド巻末の表参照）。自作SVGモックは不採用で削除済。
+4. **書類アップロードの拡張（要望）**：ケアマネのケアプラン等が PDF/Excel で届く場合に未対応（現状 `uploadPatientImage` は画像のみ）。Claude は PDF を直接読めるので PDF アップロード対応が有力（Excel は PDF/画像へ変換 or パース要）。あわせて「看護計画書画面から基礎情報のケアプランを開くショートカット」要望あり。
 
 ### マルチテナント関連の残作業（後回し可）
 - Storage の org 分離仕上げ（Stage 3b）：写真パスを `org_id` プレフィックス化＋`storage.objects` RLS＋既存ファイル移行。※現状もDB行（パス置き場）はorg分離済みで実害は出ない設計。
