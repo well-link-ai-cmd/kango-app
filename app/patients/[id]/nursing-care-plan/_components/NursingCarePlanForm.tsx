@@ -261,6 +261,8 @@ export default function NursingCarePlanForm({
           patient: { age: patient.age, diagnosis: patient.diagnosis, careLevel: patient.careLevel },
           conferenceMemo: conferenceMemo.trim() || undefined,
           oldCarePlan: patient.carePlan,
+          careManagerPlanImagePaths: patient.careManagerPlan?.images?.map((i) => i.path) ?? [],
+          careManagerPlanText: patient.careManagerPlan?.text,
         }),
       });
       const data = await res.json();
@@ -319,6 +321,8 @@ export default function NursingCarePlanForm({
           labels,
           conferenceMemo: conferenceMemo.trim() || undefined,
           oldCarePlan: patient.carePlan,
+          careManagerPlanImagePaths: patient.careManagerPlan?.images?.map((i) => i.path) ?? [],
+          careManagerPlanText: patient.careManagerPlan?.text,
           nursingContentItems,
           planDate,
         }),
@@ -414,6 +418,8 @@ export default function NursingCarePlanForm({
           planDate,
           nursingContentItems,
           carePlan: patient.carePlan, // 過渡期の参考
+          careManagerPlanImagePaths: patient.careManagerPlan?.images?.map((i) => i.path) ?? [],
+          careManagerPlanText: patient.careManagerPlan?.text,
           recentSoapRecords: recentRecords.slice(0, 5).map((r) => ({
             visitDate: r.visitDate,
             S: r.S,

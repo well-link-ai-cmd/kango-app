@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
+import { loadCarePlanImages } from "@/lib/care-plan-images";
 import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser } from "@/lib/supabase-server";
 
@@ -42,6 +43,8 @@ interface NursingCarePlanGenerateInput {
   planDate?: string;                     // 作成年月日 YYYY-MM-DD（未指定なら今日）
   nursingContentItems?: string[];        // 登録済みケア内容リスト
   carePlan?: string;                     // 旧 carePlan（過渡期参照・任意）
+  careManagerPlanImagePaths?: string[];  // ケアマネのケアプラン写真（patient-files のパス）
+  careManagerPlanText?: string;          // ケアマネのケアプラン補足テキスト
   recentSoapRecords?: PreviousRecord[];  // 直近SOAP 5件程度
   previousPlan?: {                       // 前回計画書を複製する場合の前回内容（任意）
     nursingGoal?: string;
@@ -69,6 +72,7 @@ export async function POST(req: NextRequest) {
 
   const systemPrompt = buildSystemPrompt(mode);
   const userPrompt = buildUserPrompt(body, planDate, mode);
+  const carePlanImages = await loadCarePlanImages(body.careManagerPlanImagePaths);
 
   const generateTool = {
     name: "output_nursing_care_plan",
@@ -111,6 +115,7 @@ export async function POST(req: NextRequest) {
       timeoutMs: 120000,
       temperature: 0.2,
       tool: generateTool,
+      images: carePlanImages,
     });
 
     if (!response.toolInput) {
@@ -236,7 +241,17 @@ function buildUserPrompt(
   planDate: string,
   mode: "from_scratch" | "refine"
 ): string {
-  const { patient, nursingContentItems, carePlan, recentSoapRecords, previousPlan, existingGoal, existingIssues } = input;
+  const { patient, nursingContentItems, carePlan, recentSoapRecords, previousPlan, existingGoal, existingIssues, careManagerPlanText } = input;
+
+  const hasCarePlanImage = !!(input.careManagerPlanImagePaths && input.careManagerPlanImagePaths.length > 0);
+  const careManagerPlanSection =
+    hasCarePlanImage || careManagerPlanText?.trim()
+      ? `\n【ケアマネのケアプラン（最優先で参照）】\n${
+          hasCarePlanImage
+            ? "※添付画像はケアマネが作成したケアプランです。生活全般の解決すべき課題・援助目標・サービス内容を最優先で読み取り、目標・課題に反映すること。\n"
+            : ""
+        }${careManagerPlanText?.trim() ? `補足テキスト：\n${careManagerPlanText.trim()}\n` : ""}`
+      : "";
 
   const nursingContentSection = nursingContentItems && nursingContentItems.length > 0
     ? `\n【登録済みケア内容】\n${nursingContentItems.map((item) => `・${item}`).join("\n")}`
@@ -270,6 +285,7 @@ function buildUserPrompt(
 - 要介護度: ${patient.careLevel}
 
 【計画作成日】${planDate}
+${careManagerPlanSection}
 ${nursingContentSection}
 ${carePlanSection}
 ${soapSection}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
+import { loadCarePlanImages } from "@/lib/care-plan-images";
 import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 
@@ -34,6 +35,8 @@ interface SuggestLabelsInput {
   };
   conferenceMemo?: string;                 // 議事録（推奨・任意）
   oldCarePlan?: string;                    // 旧 carePlan 欄（過渡期参照・任意）
+  careManagerPlanImagePaths?: string[];    // ケアマネのケアプラン写真（patient-files のパス）
+  careManagerPlanText?: string;            // ケアマネのケアプラン補足テキスト
 }
 
 interface LabelCandidate {
@@ -56,6 +59,8 @@ export async function POST(req: NextRequest) {
 
   // 直近1ヶ月SOAP（最大10件）と active_plan を Supabase から取得
   const { recentSoaps, activePlan } = await fetchContext(body.patientId);
+  // ケアマネのケアプラン写真を Claude vision 用に取得（最優先資料）
+  const carePlanImages = await loadCarePlanImages(body.careManagerPlanImagePaths);
 
   const systemPrompt = buildSystemPrompt();
   const userPrompt = buildUserPrompt(body, recentSoaps, activePlan);
@@ -107,6 +112,7 @@ export async function POST(req: NextRequest) {
       timeoutMs: 90000,
       temperature: 0.2,
       tool,
+      images: carePlanImages,
     });
 
     if (!response.toolInput) {
@@ -191,10 +197,11 @@ function buildSystemPrompt(): string {
 Tool use（suggest_nursing_care_labels）のJSONのみ。自然文の前置き・説明は不要。
 
 # ラベル抽出の優先順位
-1. 議事録（conference_memo）— 計画書作成の一次情報。退院前カンファレンス・サービス担当者会議等で合意された問題点
-2. 直近1ヶ月のSOAP — 実際の問題発生状況・現状反応
-3. 直前の確定計画書（active_plan）— 継続課題として優先表示（is_continuation=true）
-4. 患者基本情報（年齢・主病名・要介護度）
+1. ケアマネのケアプラン（添付画像／補足テキスト）— 介護保険では看護計画の起点。生活全般の解決すべき課題・援助目標・サービス内容を最優先で読み取り反映する
+2. 議事録（conference_memo）— 退院前カンファレンス・サービス担当者会議等で合意された問題点
+3. 直近1ヶ月のSOAP — 実際の問題発生状況・現状反応
+4. 直前の確定計画書（active_plan）— 継続課題として優先表示（is_continuation=true）
+5. 患者基本情報（年齢・主病名・要介護度）
 
 # SOAPがない場合の扱い
 新規契約直後は SOAP がほぼないことが普通。議事録と基本情報から立案する。
@@ -252,7 +259,17 @@ function buildUserPrompt(
   recentSoaps: { visitDate: string; S: string; O: string; A: string; P: string }[],
   activePlan: { planDate: string; nursingGoal?: string; issues?: unknown } | null
 ): string {
-  const { patient, conferenceMemo, oldCarePlan } = input;
+  const { patient, conferenceMemo, oldCarePlan, careManagerPlanText } = input;
+
+  const hasCarePlanImage = !!(input.careManagerPlanImagePaths && input.careManagerPlanImagePaths.length > 0);
+  const careManagerPlanSection =
+    hasCarePlanImage || careManagerPlanText?.trim()
+      ? `\n【ケアマネのケアプラン（最優先で参照）】\n${
+          hasCarePlanImage
+            ? "※添付画像はケアマネが作成したケアプランです。生活全般の解決すべき課題・援助目標・サービス内容を最優先で読み取り、訪問看護の課題に反映すること。\n"
+            : ""
+        }${careManagerPlanText?.trim() ? `補足テキスト：\n${careManagerPlanText.trim()}\n` : ""}`
+      : "";
 
   const conferenceSection = conferenceMemo?.trim()
     ? `\n【議事録（退院前カンファレンス・サービス担当者会議等）】\n${conferenceMemo}\n`
@@ -279,7 +296,7 @@ function buildUserPrompt(
 - 年齢: ${patient.age}歳
 - 主病名: ${patient.diagnosis}
 - 要介護度: ${patient.careLevel}
-${conferenceSection}${oldCarePlanSection}${soapSection}${activePlanSection}
+${careManagerPlanSection}${conferenceSection}${oldCarePlanSection}${soapSection}${activePlanSection}
 上記情報から、この患者に立てるべき看護課題のラベル候補を最大${MAX_LABELS}件提案せよ。
 Tool use の suggest_nursing_care_labels を必ず使うこと。`;
 }
