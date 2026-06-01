@@ -8,9 +8,10 @@ type AuthStep =
   | "checking"       // 認証状態確認中
   | "login"          // ログイン画面
   | "verifying"      // アクセス権確認中
-  | "needs_setup"    // 初期セットアップ
-  | "needs_password" // パスワード入力
-  | "not_allowed"    // アクセス拒否
+  | "onboarding"     // 事業所の作成 / 参加（マルチテナント）
+  | "needs_setup"    // 初期セットアップ（レガシー: 011未適用時）
+  | "needs_password" // パスワード入力（レガシー: 011未適用時）
+  | "not_allowed"    // アクセス拒否（レガシー: 011未適用時）
   | "granted";       // アクセス許可
 
 export default function AuthGate({ children }: { children: ReactNode }) {
@@ -22,6 +23,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [userRole, setUserRole] = useState<string>("");
+  // オンボーディング（事業所の作成 / 参加）
+  const [newOrgName, setNewOrgName] = useState("");
+  const [joinInput, setJoinInput] = useState("");
+  const [createdJoinCode, setCreatedJoinCode] = useState("");
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -50,17 +55,52 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function grant(currentUser: User, role: string) {
+    setUserRole(role);
+    sessionStorage.setItem("access_verified", currentUser.email!);
+    sessionStorage.setItem("user_role", role);
+    setStep("granted");
+  }
+
   async function checkAccess(currentUser: User) {
     // セッション中に既に検証済みならスキップ
     const verified = sessionStorage.getItem("access_verified");
     if (verified === currentUser.email) {
-      const savedRole = sessionStorage.getItem("user_role") || "";
-      setUserRole(savedRole);
+      setUserRole(sessionStorage.getItem("user_role") || "");
       setStep("granted");
       return;
     }
 
     setStep("verifying");
+
+    // マルチテナント: 所属事業所（membership）の有無でアクセス判定する。
+    try {
+      const supabase = getSupabase();
+      const { data: memberships, error } = await supabase
+        .from("memberships")
+        .select("role")
+        .eq("user_id", currentUser.id);
+
+      if (!error) {
+        // membership システムが有効（migration 011 適用済み）
+        if (memberships && memberships.length > 0) {
+          grant(currentUser, memberships[0].role || "user");
+        } else {
+          // どの事業所にも未所属 → オンボーディング（作成 / 参加）へ
+          setStep("onboarding");
+        }
+        return;
+      }
+      // error（memberships テーブル未作成など）→ レガシーフローへフォールバック
+    } catch {
+      // フォールバックへ
+    }
+
+    await legacyCheckAccess(currentUser);
+  }
+
+  // --- レガシー（migration 011 未適用時）の許可リスト＋事業所パスワード方式 ---
+  async function legacyCheckAccess(currentUser: User) {
     try {
       const res = await fetch("/api/auth/check-access", {
         method: "POST",
@@ -71,7 +111,6 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
       switch (data.status) {
         case "no_table":
-          // マイグレーション未実行 → そのままアクセス許可
           sessionStorage.setItem("access_verified", currentUser.email!);
           setStep("granted");
           break;
@@ -85,10 +124,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           setStep("not_allowed");
           break;
         case "ok":
-          setUserRole(data.role || "");
-          sessionStorage.setItem("access_verified", currentUser.email!);
-          sessionStorage.setItem("user_role", data.role || "");
-          setStep("granted");
+          grant(currentUser, data.role || "");
           break;
         default:
           setError("予期しないエラーが発生しました");
@@ -187,6 +223,68 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     }
   }
 
+  // 事業所を新規作成（作成者が管理者になる）
+  async function handleCreateOrg(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!newOrgName.trim()) return;
+    setLoading(true);
+    try {
+      const supabase = getSupabase();
+      const { data: newOrgId, error } = await supabase.rpc("create_organization", {
+        org_name: newOrgName.trim(),
+      });
+      if (error) {
+        setError("事業所の作成に失敗しました。時間をおいて再度お試しください。");
+        return;
+      }
+      // 参加コードを取得してスタッフ共有用に表示
+      const { data: org } = await supabase
+        .from("organizations")
+        .select("join_code")
+        .eq("id", newOrgId)
+        .maybeSingle();
+      setCreatedJoinCode(org?.join_code ?? "");
+    } catch {
+      setError("通信エラーが発生しました");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // 参加コードで既存の事業所に参加
+  async function handleJoinOrg(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!joinInput.trim()) return;
+    setLoading(true);
+    try {
+      const supabase = getSupabase();
+      const { error } = await supabase.rpc("join_organization", {
+        code: joinInput.trim(),
+      });
+      if (error) {
+        setError(
+          /invalid_code/.test(error.message ?? "")
+            ? "参加コードが正しくありません。管理者にご確認ください。"
+            : "事業所への参加に失敗しました。"
+        );
+        return;
+      }
+      finishOnboarding();
+    } catch {
+      setError("通信エラーが発生しました");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // オンボーディング完了 → 再読込で所属事業所のデータを読み直す
+  function finishOnboarding() {
+    sessionStorage.removeItem("access_verified");
+    window.location.reload();
+  }
+
   async function handleLogout() {
     const supabase = getSupabase();
     await supabase.auth.signOut();
@@ -276,6 +374,90 @@ export default function AuthGate({ children }: { children: ReactNode }) {
             >
               <GoogleIcon />
               {loading ? "ログイン中..." : "Googleアカウントでログイン"}
+            </button>
+          </>
+        )}
+
+        {/* --- オンボーディング: 事業所の作成 / 参加 --- */}
+        {step === "onboarding" && (
+          <>
+            {createdJoinCode ? (
+              <>
+                <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🎉</div>
+                <h1 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.5rem", color: "var(--text-primary, #1a1a1a)" }}>
+                  事業所を作成しました
+                </h1>
+                <p style={{ fontSize: "0.875rem", color: "var(--text-secondary, #666)", marginBottom: "1rem", lineHeight: 1.6 }}>
+                  下の「参加コード」をスタッフに共有してください。<br />
+                  スタッフは同じログイン画面の「既存の事業所に参加する」から入れます。
+                </p>
+                <div style={{ fontSize: "1.5rem", fontWeight: 700, letterSpacing: "0.15em", padding: "0.75rem", background: "var(--bg-muted, #f5f5f5)", borderRadius: "8px", marginBottom: "0.5rem", userSelect: "all" }}>
+                  {createdJoinCode}
+                </div>
+                <p style={{ fontSize: "0.75rem", color: "var(--text-muted, #999)", marginBottom: "1.25rem" }}>
+                  ※ コードは後から「管理」画面でも確認できます
+                </p>
+                <button onClick={finishOnboarding} className="btn-primary">
+                  はじめる
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🏢</div>
+                <h1 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem", color: "var(--text-primary, #1a1a1a)" }}>
+                  事業所の登録
+                </h1>
+                <p style={{ fontSize: "0.8rem", color: "var(--text-muted, #999)", marginBottom: "1.25rem" }}>
+                  {user?.email}
+                </p>
+
+                {error && <ErrorMessage message={error} />}
+
+                {/* 新規作成 */}
+                <form onSubmit={handleCreateOrg} style={{ marginBottom: "0.5rem" }}>
+                  <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text-secondary, #666)", marginBottom: "0.5rem", textAlign: "left" }}>
+                    新しい事業所を作る
+                  </p>
+                  <input
+                    type="text"
+                    value={newOrgName}
+                    onChange={(e) => setNewOrgName(e.target.value)}
+                    placeholder="事業所名（例: ○○訪問看護ステーション）"
+                    style={inputStyle}
+                  />
+                  <button type="submit" disabled={loading || !newOrgName.trim()} className="btn-primary" style={{ opacity: loading || !newOrgName.trim() ? 0.5 : 1 }}>
+                    {loading ? "作成中..." : "事業所を作成する"}
+                  </button>
+                </form>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", margin: "1rem 0", color: "var(--text-muted, #bbb)", fontSize: "0.75rem" }}>
+                  <span style={{ flex: 1, height: 1, background: "var(--border, #eee)" }} />
+                  または
+                  <span style={{ flex: 1, height: 1, background: "var(--border, #eee)" }} />
+                </div>
+
+                {/* 参加 */}
+                <form onSubmit={handleJoinOrg}>
+                  <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text-secondary, #666)", marginBottom: "0.5rem", textAlign: "left" }}>
+                    既存の事業所に参加する
+                  </p>
+                  <input
+                    type="text"
+                    value={joinInput}
+                    onChange={(e) => setJoinInput(e.target.value.toUpperCase())}
+                    placeholder="参加コード（管理者から共有）"
+                    autoComplete="off"
+                    style={{ ...inputStyle, letterSpacing: "0.1em" }}
+                  />
+                  <button type="submit" disabled={loading || !joinInput.trim()} className="btn-primary" style={{ opacity: loading || !joinInput.trim() ? 0.5 : 1 }}>
+                    {loading ? "参加中..." : "参加する"}
+                  </button>
+                </form>
+              </>
+            )}
+
+            <button onClick={handleLogout} style={linkButtonStyle}>
+              別のアカウントでログイン
             </button>
           </>
         )}
