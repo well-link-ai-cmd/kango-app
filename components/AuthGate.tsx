@@ -85,10 +85,22 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         // membership システムが有効（migration 011 適用済み）
         if (memberships && memberships.length > 0) {
           grant(currentUser, memberships[0].role || "user");
-        } else {
-          // どの事業所にも未所属 → オンボーディング（作成 / 参加）へ
-          setStep("onboarding");
+          return;
         }
+        // 未所属 → メール招待があれば自動参加を試みる（migration 013）
+        const { data: accepted } = await supabase.rpc("accept_invites");
+        if (accepted && (accepted as number) > 0) {
+          const { data: joined } = await supabase
+            .from("memberships")
+            .select("role")
+            .eq("user_id", currentUser.id);
+          if (joined && joined.length > 0) {
+            grant(currentUser, joined[0].role || "user");
+            return;
+          }
+        }
+        // 招待もなし → オンボーディング（作成 / 参加コード）へ
+        setStep("onboarding");
         return;
       }
       // error（memberships テーブル未作成など）→ レガシーフローへフォールバック
