@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
-  getPatients, getRecords, getNursingContents, saveNursingContents, generateId,
+  getPatients, getRecords, getNursingContents, saveNursingContents, generateId, SAVE_FAIL_MESSAGE,
   type Patient, type SoapRecord, type NursingContents, type NursingContentItem,
 } from "@/lib/storage";
 import { ArrowLeft, Plus, Trash2, Sparkles, RefreshCw, Check, X, Home, Pencil, Save } from "lucide-react";
@@ -53,7 +53,8 @@ export default function NursingContentsPage() {
       lastAnalyzedAt: contents?.lastAnalyzedAt,
       updatedAt: new Date().toISOString(),
     };
-    await saveNursingContents(updated);
+    const ok = await saveNursingContents(updated);
+    if (!ok) { alert(SAVE_FAIL_MESSAGE); return; }
     setContents(updated);
   }
 
@@ -160,7 +161,8 @@ export default function NursingContentsPage() {
       lastAnalyzedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    await saveNursingContents(updated);
+    const ok = await saveNursingContents(updated);
+    if (!ok) { alert(SAVE_FAIL_MESSAGE); return; }
     setContents(updated);
     setExtractPreview(null);
   }
@@ -398,7 +400,8 @@ export default function NursingContentsPage() {
                   items: [],
                   updatedAt: new Date().toISOString(),
                 };
-                await saveNursingContents(empty);
+                const ok = await saveNursingContents(empty);
+                if (!ok) { alert(SAVE_FAIL_MESSAGE); return; }
                 setContents(empty);
               }}
               className="btn-outline"

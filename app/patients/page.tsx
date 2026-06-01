@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, getPatientTodos, getPatientsWithPendingTodos, getPatientsNeedingPlanReview, addPatientTodo, togglePatientTodo, deletePatientTodo, type Patient, type PatientTodo } from "@/lib/storage";
+import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, getPatientTodos, getPatientsWithPendingTodos, getPatientsNeedingPlanReview, addPatientTodo, togglePatientTodo, deletePatientTodo, SAVE_FAIL_MESSAGE, type Patient, type PatientTodo } from "@/lib/storage";
 import { getSupabase } from "@/lib/supabase";
 import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut, Settings, ListTodo, Plus, Check, BookOpen } from "lucide-react";
 import { getUserRole } from "@/components/AuthGate";
@@ -112,6 +112,8 @@ export default function PatientsPage() {
       setTodos([added, ...todos]);
       setNewTodoText("");
       setPendingTodoPatientIds(await getPatientsWithPendingTodos());
+    } else {
+      alert(SAVE_FAIL_MESSAGE);
     }
   }
 

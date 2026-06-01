@@ -13,6 +13,7 @@ import {
   getNursingCarePlans,
   deleteNursingCarePlan,
   savePatient,
+  SAVE_FAIL_MESSAGE,
   issueToDisplayText,
   isCarePlanReviewDue,
   monthsSinceCarePlanReview,
@@ -83,7 +84,8 @@ export default function NursingCarePlanListPage() {
     if (!patient) return;
     if (!confirm("旧「ケアプラン・訪問方針」欄の内容を削除しますか？\nこの操作は取り消せません。")) return;
     const updated: Patient = { ...patient, carePlan: undefined };
-    await savePatient(updated);
+    const ok = await savePatient(updated);
+    if (!ok) { alert(SAVE_FAIL_MESSAGE); return; }
     setPatient(updated);
   }
 
