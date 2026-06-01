@@ -24,8 +24,8 @@ export default function EditPatientPage() {
   const [careManagersList, setCareManagersList] = useState<CareManagerInfo[]>([]);
   const [openDoctor, setOpenDoctor] = useState(false);
   const [openCareManager, setOpenCareManager] = useState(false);
+  // 旧「ケアプラン・訪問方針」欄はUI廃止。既存データは保持し、看護計画書への移行バナーで参照する
   const [carePlan, setCarePlan] = useState("");
-  const [openCarePlan, setOpenCarePlan] = useState(false);
 
   // ケア内容リスト（編集対応）
   const [nursingContentItems, setNursingContentItems] = useState<NursingContentItem[]>([]);
@@ -58,7 +58,6 @@ export default function EditPatientPage() {
         setOpenCareManager(true);
       }
       setCarePlan(patient.carePlan ?? "");
-      if (patient.carePlan) setOpenCarePlan(true);
       // 初期SOAP記録を読み込み（統合テキスト形式に変換）
       // ケア内容リストを読み込み
       const nc = await getNursingContents(id);
@@ -335,34 +334,6 @@ export default function EditPatientPage() {
                 <button type="button" onClick={() => setCareManagersList([...careManagersList, { name: "", office: "" }])} className="btn-outline w-full justify-center">
                   <Plus size={16} /> もう1件追加
                 </button>
-              </div>
-            )}
-          </div>
-
-          {/* Care Plan */}
-          <div className="card overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setOpenCarePlan(!openCarePlan)}
-              className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-[rgba(0,200,200,0.02)]"
-            >
-              <div className="text-left">
-                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>ケアプラン・訪問方針</p>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>入力するとAIのSOAP変換精度が上がります（任意）</p>
-              </div>
-              {openCarePlan
-                ? <ChevronUp size={18} style={{ color: "var(--text-muted)" }} />
-                : <ChevronDown size={18} style={{ color: "var(--text-muted)" }} />}
-            </button>
-            {openCarePlan && (
-              <div className="px-5 pb-5 animate-fade-in">
-                <textarea rows={5}
-                  className="input-field text-sm"
-                  style={{ resize: "none" }}
-                  placeholder="例：脳梗塞後の右半身麻痺あり。血圧管理が最重要課題（目標：収縮期130〜160）。褥瘡予防・関節拘縮予防のリハビリ実施。"
-                  value={carePlan}
-                  onChange={(e) => setCarePlan(e.target.value)}
-                />
               </div>
             )}
           </div>

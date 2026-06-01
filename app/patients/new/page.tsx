@@ -22,8 +22,6 @@ export default function NewPatientPage() {
   const [careManagersList, setCareManagersList] = useState<CareManagerInfo[]>([]);
   const [openDoctor, setOpenDoctor] = useState(false);
   const [openCareManager, setOpenCareManager] = useState(false);
-  const [carePlan, setCarePlan] = useState("");
-  const [openCarePlan, setOpenCarePlan] = useState(false);
 
   // ケア内容リスト（初回入力）— 複数行対応
   const [openNursingContents, setOpenNursingContents] = useState(false);
@@ -75,7 +73,6 @@ export default function NewPatientPage() {
         ? doctors.filter(d => d.name.trim() || d.hospital.trim()) : undefined,
       careManagers: careManagersList.filter(c => c.name.trim() || c.office.trim()).length > 0
         ? careManagersList.filter(c => c.name.trim() || c.office.trim()) : undefined,
-      carePlan: carePlan.trim() || undefined,
       initialSoapRecords: initialSoapRecords.length > 0 ? initialSoapRecords : undefined,
       createdAt: new Date().toISOString(),
     });
@@ -283,37 +280,6 @@ export default function NewPatientPage() {
                 <button type="button" onClick={() => setCareManagersList([...careManagersList, { name: "", office: "" }])} className="btn-outline w-full justify-center">
                   <Plus size={16} /> もう1件追加
                 </button>
-              </div>
-            )}
-          </div>
-
-          {/* Care Plan */}
-          <div className="card overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setOpenCarePlan(!openCarePlan)}
-              className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-[rgba(0,200,200,0.02)]"
-            >
-              <div className="text-left">
-                <p className="font-semibold" style={{ color: "var(--text-primary)" }}>ケアプラン・訪問方針</p>
-                <p className="text-xs" style={{ color: "var(--text-muted)" }}>入力するとAIのSOAP変換精度が上がります（任意）</p>
-              </div>
-              {openCarePlan
-                ? <ChevronUp size={18} style={{ color: "var(--text-muted)" }} />
-                : <ChevronDown size={18} style={{ color: "var(--text-muted)" }} />}
-            </button>
-            {openCarePlan && (
-              <div className="px-5 pb-5 animate-fade-in">
-                <p className="text-xs mb-2" style={{ color: "var(--text-muted)" }}>
-                  訪問看護の目標・観察ポイント・実施ケアの内容などを入力してください。担当者会議の内容をそのまま貼ってもOKです。
-                </p>
-                <textarea rows={5}
-                  className="input-field text-sm"
-                  style={{ resize: "none" }}
-                  placeholder="例：脳梗塞後の右半身麻痺あり。血圧管理が最重要課題（目標：収縮期130〜160）。褥瘡予防・関節拘縮予防のリハビリ実施。認知機能低下に注意。"
-                  value={carePlan}
-                  onChange={(e) => setCarePlan(e.target.value)}
-                />
               </div>
             )}
           </div>
