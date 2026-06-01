@@ -7,6 +7,36 @@ async function getCurrentUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
+// 所属事業所（org_id）のメモ化キャッシュ。ユーザーが変わったら破棄される。
+let _orgCache: { userId: string; orgId: string | null } | null = null;
+
+/**
+ * 現在のログインユーザーと、その所属事業所（org_id）を取得する。
+ * org_id は memberships テーブルから引く（マルチテナントのデータ分離キー）。
+ * 書き込み系（insert/upsert）で行に org_id を付与するために使う。
+ */
+async function getCurrentUserAndOrg(): Promise<{ userId: string | null; orgId: string | null }> {
+  const { data: { user } } = await getSupabase().auth.getUser();
+  if (!user) return { userId: null, orgId: null };
+  if (_orgCache && _orgCache.userId === user.id) {
+    return { userId: user.id, orgId: _orgCache.orgId };
+  }
+  const { data, error } = await getSupabase()
+    .from("memberships")
+    .select("org_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+  const orgId = !error && data ? (data.org_id as string) : null;
+  _orgCache = { userId: user.id, orgId };
+  return { userId: user.id, orgId };
+}
+
+/** 現在のユーザーの所属事業所ID（未所属なら null）。オンボーディング判定等に使う。 */
+export async function getCurrentOrgId(): Promise<string | null> {
+  return (await getCurrentUserAndOrg()).orgId;
+}
+
 // データ型定義
 
 export type CareLevel =
@@ -271,7 +301,7 @@ export interface PatientTodo {
 // ---- camelCase <-> snake_case 変換 ----
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function patientToRow(p: Patient, userId?: string): Record<string, any> {
+function patientToRow(p: Patient, userId?: string, orgId?: string): Record<string, any> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row: Record<string, any> = {
     id: p.id,
@@ -298,6 +328,7 @@ function patientToRow(p: Patient, userId?: string): Record<string, any> {
     created_at: p.createdAt,
   };
   if (userId) row.user_id = userId;
+  if (orgId) row.org_id = orgId;
   return row;
 }
 
@@ -341,7 +372,7 @@ function rowToPatient(row: any): Patient {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function recordToRow(r: SoapRecord, userId?: string): Record<string, any> {
+function recordToRow(r: SoapRecord, userId?: string, orgId?: string): Record<string, any> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row: Record<string, any> = {
     id: r.id,
@@ -355,6 +386,7 @@ function recordToRow(r: SoapRecord, userId?: string): Record<string, any> {
     created_at: r.createdAt,
   };
   if (userId) row.user_id = userId;
+  if (orgId) row.org_id = orgId;
   return row;
 }
 
@@ -391,8 +423,8 @@ export async function getPatients(): Promise<Patient[]> {
 }
 
 export async function savePatient(patient: Patient): Promise<void> {
-  const userId = await getCurrentUserId();
-  const row = patientToRow(patient, userId ?? undefined);
+  const { userId, orgId } = await getCurrentUserAndOrg();
+  const row = patientToRow(patient, userId ?? undefined, orgId ?? undefined);
   const { error } = await getSupabase()
     .from("patients")
     .upsert(row, { onConflict: "id" });
@@ -432,8 +464,8 @@ export async function getRecordById(id: string): Promise<SoapRecord | null> {
 }
 
 export async function saveRecord(record: SoapRecord): Promise<void> {
-  const userId = await getCurrentUserId();
-  const row = recordToRow(record, userId ?? undefined);
+  const { userId, orgId } = await getCurrentUserAndOrg();
+  const row = recordToRow(record, userId ?? undefined, orgId ?? undefined);
   const { error } = await getSupabase()
     .from("soap_records")
     .upsert(row, { onConflict: "id" });
@@ -529,7 +561,7 @@ export async function getNursingContents(patientId: string): Promise<NursingCont
 }
 
 export async function saveNursingContents(contents: NursingContents): Promise<void> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const row: Record<string, any> = {
     patient_id: contents.patientId,
@@ -538,6 +570,7 @@ export async function saveNursingContents(contents: NursingContents): Promise<vo
     updated_at: contents.updatedAt,
   };
   if (userId) row.user_id = userId;
+  if (orgId) row.org_id = orgId;
   const { error } = await getSupabase()
     .from("nursing_contents")
     .upsert(row, { onConflict: "patient_id" });
@@ -628,7 +661,7 @@ export async function getPatientsWithPendingTodos(): Promise<Set<string>> {
 }
 
 export async function addPatientTodo(patientId: string, content: string): Promise<PatientTodo | null> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
   const { data, error } = await getSupabase()
     .from("patient_todos")
     .insert({
@@ -636,6 +669,7 @@ export async function addPatientTodo(patientId: string, content: string): Promis
       content,
       is_done: false,
       created_by: userId,
+      org_id: orgId,
     })
     .select()
     .single();
@@ -838,7 +872,7 @@ export async function getPressureUlcerPlan(id: string): Promise<PressureUlcerPla
 export async function savePressureUlcerPlan(
   plan: Omit<PressureUlcerPlan, "id" | "createdAt" | "updatedAt"> & { id?: string }
 ): Promise<PressureUlcerPlan | null> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
 
   const row = {
     ...(plan.id ? { id: plan.id } : {}),
@@ -869,6 +903,7 @@ export async function savePressureUlcerPlan(
     ai_prompt_version: plan.aiPromptVersion ?? null,
     ai_generated_at: plan.aiGeneratedAt ?? null,
     user_id: userId,
+    org_id: orgId,
     ...(plan.id ? {} : { created_by: userId }),
   };
 
@@ -1252,7 +1287,7 @@ export async function getActiveNursingCarePlan(patientId: string): Promise<Nursi
 export async function saveNursingCarePlan(
   plan: Omit<NursingCarePlan, "id" | "createdAt" | "updatedAt"> & { id?: string }
 ): Promise<NursingCarePlan | null> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
 
   const row = {
     ...(plan.id ? { id: plan.id } : {}),
@@ -1278,6 +1313,7 @@ export async function saveNursingCarePlan(
     ai_prompt_version: plan.aiPromptVersion ?? null,
     ai_generated_at: plan.aiGeneratedAt ?? null,
     user_id: userId,
+    org_id: orgId,
     ...(plan.id ? {} : { created_by: userId }),
   };
 
@@ -1501,7 +1537,7 @@ export async function getVisitReportByMonth(
 export async function saveVisitReport(
   report: Omit<VisitReport, "id" | "createdAt" | "updatedAt"> & { id?: string }
 ): Promise<VisitReport | null> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
 
   const rehab = report.rehabAttachment;
   const rehabRow = rehab
@@ -1543,6 +1579,7 @@ export async function saveVisitReport(
     ai_prompt_version: report.aiPromptVersion ?? null,
     ai_generated_at: report.aiGeneratedAt ?? null,
     user_id: userId,
+    org_id: orgId,
     ...(report.id ? {} : { created_by: userId }),
   };
 
@@ -1703,7 +1740,7 @@ export async function getInfoProvision(id: string): Promise<InfoProvision | null
 export async function saveInfoProvision(
   provision: Omit<InfoProvision, "id" | "createdAt" | "updatedAt"> & { id?: string }
 ): Promise<InfoProvision | null> {
-  const userId = await getCurrentUserId();
+  const { userId, orgId } = await getCurrentUserAndOrg();
 
   const row = {
     ...(provision.id ? { id: provision.id } : {}),
@@ -1734,6 +1771,7 @@ export async function saveInfoProvision(
     ai_prompt_version: provision.aiPromptVersion ?? null,
     ai_generated_at: provision.aiGeneratedAt ?? null,
     user_id: userId,
+    org_id: orgId,
     ...(provision.id ? {} : { created_by: userId }),
   };
 
@@ -1845,16 +1883,20 @@ export async function migrateLocalStorageToSupabase(): Promise<void> {
 
   console.log(`[移行] localStorage → Supabase: 患者${patients.length}件, 記録${records.length}件, 看護内容${nursingContents.length}件`);
 
+  // マルチテナント: 取り込む行に所属事業所（org_id）を付与する
+  const { userId, orgId } = await getCurrentUserAndOrg();
+  if (!orgId) { console.warn("[移行] 所属事業所が未設定のためスキップ"); return; }
+
   // 患者をupsert
   if (patients.length > 0) {
-    const rows = patients.map((p) => patientToRow(p));
+    const rows = patients.map((p) => patientToRow(p, userId ?? undefined, orgId));
     const { error } = await getSupabase().from("patients").upsert(rows, { onConflict: "id" });
     if (error) { console.error("[移行] patients error:", error); return; }
   }
 
   // 記録をupsert
   if (records.length > 0) {
-    const rows = records.map((r) => recordToRow(r));
+    const rows = records.map((r) => recordToRow(r, userId ?? undefined, orgId));
     const { error } = await getSupabase().from("soap_records").upsert(rows, { onConflict: "id" });
     if (error) { console.error("[移行] soap_records error:", error); return; }
   }
@@ -1866,6 +1908,7 @@ export async function migrateLocalStorageToSupabase(): Promise<void> {
       items: nc.items,
       last_analyzed_at: nc.lastAnalyzedAt ?? null,
       updated_at: nc.updatedAt,
+      org_id: orgId,
     }, { onConflict: "patient_id" });
     if (error) { console.error("[移行] nursing_contents error:", error); return; }
   }
