@@ -84,13 +84,51 @@ const IMAGE_EXT: Record<string, string> = {
   "image/gif": "gif",
 };
 
+/**
+ * アップロード前にブラウザ側で画像を縮小・再圧縮する。
+ * スマホ原寸（2〜4MB）→ 長辺2000px・JPEG品質0.85（おおむね 1/5〜1/10）に。
+ * Supabase Storage の消費量を大きく抑えつつ、書類写真の文字や創部の判別は保てる粒度。
+ * - gif（アニメ）・小さい画像（600KB以下）は劣化を避けてそのまま
+ * - 透過PNGは白背景を敷いてからJPEG化（黒背景化を防止）
+ * - 失敗時・かえって増える場合は元ファイルを返す（安全側）
+ */
+async function compressImage(file: File, maxEdge = 2000, quality = 0.85): Promise<File> {
+  if (typeof document === "undefined") return file;            // サーバー側では何もしない
+  if (!file.type.startsWith("image/") || file.type === "image/gif") return file;
+  if (file.size <= 600 * 1024) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const blob: Blob | null = await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality)
+    );
+    if (!blob || blob.size >= file.size) return file;          // 圧縮で増えるなら元を使う
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "image";
+    return new File([blob], `${baseName}.jpg`, { type: "image/jpeg" });
+  } catch {
+    return file;                                                // 失敗時は元ファイル
+  }
+}
+
 /** 画像を patient-files バケットにアップロードし、参照(StoredImage)を返す */
 export async function uploadPatientImage(file: File, prefix: string): Promise<StoredImage> {
-  const ext = IMAGE_EXT[file.type] ?? (file.name.split(".").pop() || "bin");
+  const compressed = await compressImage(file);
+  const ext = IMAGE_EXT[compressed.type] ?? (compressed.name.split(".").pop() || "bin");
   const path = `${prefix}/${generateId()}.${ext}`;
   const { error } = await getSupabase()
     .storage.from(PATIENT_FILES_BUCKET)
-    .upload(path, file, { contentType: file.type || undefined, upsert: false });
+    .upload(path, compressed, { contentType: compressed.type || undefined, upsert: false });
   if (error) throw new Error(`画像のアップロードに失敗しました: ${error.message}`);
   return { path, uploadedAt: new Date().toISOString() };
 }
