@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Shield, User, Trash2, Building2, Copy, RefreshCw } from "lucide-react";
+import { ArrowLeft, Shield, User, Trash2, Building2, Copy, RefreshCw, Mail, X } from "lucide-react";
 import { getUserRole } from "@/components/AuthGate";
 import { getSupabase } from "@/lib/supabase";
 
@@ -14,6 +14,13 @@ interface Member {
   joined_at: string;
 }
 
+interface Invite {
+  id: string;
+  email: string;
+  role: string;
+  created_at: string;
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [members, setMembers] = useState<Member[]>([]);
@@ -23,7 +30,10 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [codeCopied, setCodeCopied] = useState(false);
-  const [busy, setBusy] = useState(false); // 権限変更・削除・再発行の進行中
+  const [busy, setBusy] = useState(false); // 権限変更・削除・再発行・招待の進行中
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"user" | "admin">("user");
 
   useEffect(() => {
     const role = getUserRole();
@@ -40,7 +50,7 @@ export default function AdminPage() {
     try {
       const { data: { user } } = await getSupabase().auth.getUser();
       setCurrentUserId(user?.id ?? "");
-      await Promise.all([loadOrg(), loadMembers()]);
+      await Promise.all([loadOrg(), loadMembers(), loadInvites()]);
     } finally {
       setLoading(false);
     }
@@ -63,6 +73,44 @@ export default function AdminPage() {
       return;
     }
     setMembers((data ?? []) as Member[]);
+  }
+
+  async function loadInvites() {
+    const { data, error } = await getSupabase()
+      .from("org_invites")
+      .select("id, email, role, created_at")
+      .order("created_at", { ascending: false });
+    if (!error) setInvites((data ?? []) as Invite[]);
+  }
+
+  async function handleInvite(e: React.FormEvent) {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+    setError(""); setSuccess(""); setBusy(true);
+    try {
+      const { error } = await getSupabase().rpc("invite_member", {
+        invite_email: inviteEmail.trim(),
+        invite_role: inviteRole,
+      });
+      if (error) {
+        setError(/invalid_email/.test(error.message ?? "") ? "メールアドレスの形式が正しくありません" : "招待の追加に失敗しました");
+        return;
+      }
+      setSuccess(`${inviteEmail.trim()} を招待しました（本人が初回ログインすると自動で参加します）`);
+      setInviteEmail("");
+      setInviteRole("user");
+      await loadInvites();
+    } finally { setBusy(false); }
+  }
+
+  async function cancelInvite(inv: Invite) {
+    if (!confirm(`${inv.email} の招待を取り消しますか？`)) return;
+    setError(""); setSuccess(""); setBusy(true);
+    try {
+      const { error } = await getSupabase().from("org_invites").delete().eq("id", inv.id);
+      if (error) { setError("招待の取消に失敗しました"); return; }
+      await loadInvites();
+    } finally { setBusy(false); }
   }
 
   async function copyJoinCode() {
@@ -189,6 +237,66 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+
+        {/* メール招待（事前登録） */}
+        <div className="card" style={{ padding: "20px", marginBottom: "16px" }}>
+          <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Mail size={18} style={{ color: "var(--accent-cyan)" }} />
+            メール招待（事前登録）
+          </h2>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "12px", lineHeight: 1.6 }}>
+            こちらでメールアドレスを登録しておくと、その人が初めてGoogleログインした時に、参加コード不要で自動的にこの事業所に参加します（指定した権限のまま）。
+          </p>
+          <form onSubmit={handleInvite}>
+            <div style={{ marginBottom: "10px" }}>
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="example@gmail.com"
+                className="input-field"
+              />
+            </div>
+            <div style={{ display: "flex", gap: "12px", marginBottom: "12px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.9rem", cursor: "pointer" }}>
+                <input type="radio" name="inviteRole" checked={inviteRole === "user"} onChange={() => setInviteRole("user")} />
+                一般ユーザー
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.9rem", cursor: "pointer" }}>
+                <input type="radio" name="inviteRole" checked={inviteRole === "admin"} onChange={() => setInviteRole("admin")} />
+                管理者
+              </label>
+            </div>
+            <button type="submit" disabled={busy || !inviteEmail.trim()} className="btn-primary" style={{ opacity: busy || !inviteEmail.trim() ? 0.5 : 1 }}>
+              招待する
+            </button>
+          </form>
+
+          {invites.length > 0 && (
+            <div style={{ marginTop: "16px" }}>
+              <p style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "8px" }}>
+                招待中（{invites.length}）
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {invites.map((inv) => (
+                  <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 12px", background: "var(--bg-tertiary)", borderRadius: "10px" }}>
+                    <Mail size={15} style={{ color: "var(--text-muted)", flexShrink: 0 }} />
+                    <span style={{ flex: 1, minWidth: 0, fontSize: "0.85rem", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {inv.email}
+                      {inv.role === "admin" && <span className="badge badge-blue" style={{ marginLeft: "8px" }}>管理者</span>}
+                    </span>
+                    <button onClick={() => cancelInvite(inv)} disabled={busy} className="btn-delete" title="招待を取り消す" style={{ opacity: busy ? 0.5 : 1 }}>
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "8px" }}>
+                ※ 招待中＝まだログインしていない人。本人がログインすると「メンバー一覧」へ移ります。
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* メンバー一覧 */}
         <div className="card" style={{ padding: "20px" }}>
