@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, getPatientTodos, getPatientsWithPendingTodos, addPatientTodo, togglePatientTodo, deletePatientTodo, type Patient, type PatientTodo } from "@/lib/storage";
 import { getSupabase } from "@/lib/supabase";
-import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut, Settings, ListTodo, Plus, Check } from "lucide-react";
+import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut, Settings, ListTodo, Plus, Check, BookOpen } from "lucide-react";
 import { getUserRole } from "@/components/AuthGate";
 
 const CARE_LEVEL_BADGE: Record<string, string> = {
@@ -224,6 +224,10 @@ export default function PatientsPage() {
             <Link href="/patients/new" className="btn-outline">
               <UserPlus size={16} />
               利用者追加
+            </Link>
+            <Link href="/guide" className="btn-outline" title="使い方ガイド">
+              <BookOpen size={16} />
+              使い方
             </Link>
             {getUserRole() === "admin" && (
               <Link

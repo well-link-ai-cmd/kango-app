@@ -1,0 +1,15 @@
+.guide-md { color: var(--text-secondary, #44505a); font-size: 0.95rem; }
+.guide-md h1 { font-size: 1.55rem; font-weight: 700; margin: 0.25rem 0 1rem; color: var(--text-primary, #1a1f24); }
+.guide-md h2 { font-size: 1.2rem; font-weight: 700; margin: 1.8rem 0 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border, #e3eaee); color: var(--text-primary, #1a1f24); }
+.guide-md h3 { font-size: 1.05rem; font-weight: 700; margin: 1rem 0 0.4rem; color: var(--text-primary, #1a1f24); }
+.guide-md p { line-height: 1.85; margin: 0.5rem 0; }
+.guide-md ul { padding-left: 1.4rem; list-style: disc; margin: 0.4rem 0; }
+.guide-md ol { padding-left: 1.4rem; list-style: decimal; margin: 0.4rem 0; }
+.guide-md li { margin: 0.3rem 0; line-height: 1.8; }
+.guide-md strong { font-weight: 700; color: var(--text-primary, #1a1f24); }
+.guide-md blockquote { border-left: 4px solid var(--accent-cyan, #18b6c9); background: rgba(24,182,201,0.06); padding: 0.6rem 1rem; border-radius: 8px; margin: 0.9rem 0; }
+.guide-md blockquote p { margin: 0.2rem 0; }
+.guide-md hr { border: none; border-top: 1px solid var(--border, #e3eaee); margin: 1.6rem 0; }
+.guide-md code { background: var(--bg-tertiary, #f1f5f7); padding: 0.1rem 0.35rem; border-radius: 5px; font-size: 0.9em; }
+.guide-md a { color: var(--accent-cyan, #18b6c9); text-decoration: underline; }
+.guide-md img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--border, #e3eaee); margin: 12px 0; display: block; box-shadow: 0 2px 12px rgba(26,42,51,0.06); }
