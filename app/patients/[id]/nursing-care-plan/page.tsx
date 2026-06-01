@@ -12,6 +12,7 @@ import {
   getPatients,
   getNursingCarePlans,
   deleteNursingCarePlan,
+  savePatient,
   issueToDisplayText,
   type Patient,
   type NursingCarePlan,
@@ -71,6 +72,14 @@ export default function NursingCarePlanListPage() {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2000);
+  }
+
+  async function handleDeleteOldCarePlan() {
+    if (!patient) return;
+    if (!confirm("旧「ケアプラン・訪問方針」欄の内容を削除しますか？\nこの操作は取り消せません。")) return;
+    const updated: Patient = { ...patient, carePlan: undefined };
+    await savePatient(updated);
+    setPatient(updated);
   }
 
   if (!loaded) {
@@ -135,6 +144,19 @@ export default function NursingCarePlanListPage() {
                 {patient.carePlan}
               </pre>
             </details>
+            <button
+              onClick={handleDeleteOldCarePlan}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: "6px",
+                marginTop: "12px", padding: "6px 12px", borderRadius: "8px",
+                border: "1px solid rgba(220,53,79,0.4)", color: "#d9534f",
+                background: "transparent", cursor: "pointer", fontSize: "0.75rem",
+              }}
+              title="旧欄の内容を削除"
+            >
+              <Trash2 size={13} />
+              この旧欄を削除する
+            </button>
           </div>
         )}
 
