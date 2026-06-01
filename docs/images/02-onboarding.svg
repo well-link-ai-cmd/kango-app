@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 560" font-family="'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5fd3e0"/><stop offset="1" stop-color="#d98fd0"/>
+    </linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#1a2a33" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+  <rect width="760" height="560" fill="#eaf1f5"/>
+  <!-- card -->
+  <rect x="180" y="30" width="400" height="500" rx="18" fill="#ffffff" filter="url(#sh)"/>
+  <!-- building icon -->
+  <rect x="362" y="60" width="36" height="40" rx="4" fill="#bcd6e6"/>
+  <rect x="370" y="68" width="6" height="6" fill="#fff"/><rect x="384" y="68" width="6" height="6" fill="#fff"/>
+  <rect x="370" y="80" width="6" height="6" fill="#fff"/><rect x="384" y="80" width="6" height="6" fill="#fff"/>
+  <text x="380" y="132" text-anchor="middle" font-size="20" font-weight="700" fill="#1a1f24">事業所の登録</text>
+  <text x="380" y="156" text-anchor="middle" font-size="12" fill="#9aa6ad">tanaka@gmail.com</text>
+
+  <text x="210" y="196" font-size="13" font-weight="700" fill="#5b6770">新しい事業所を作る</text>
+  <rect x="210" y="206" width="340" height="44" rx="9" fill="#f1f5f7" stroke="#e3eaee"/>
+  <text x="226" y="233" font-size="13" fill="#aab4bb">事業所名（例: ○○訪問看護ステーション）</text>
+  <rect x="210" y="260" width="340" height="46" rx="9" fill="url(#g)"/>
+  <text x="380" y="288" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">事業所を作成する</text>
+
+  <line x1="210" y1="338" x2="350" y2="338" stroke="#e3eaee"/>
+  <text x="380" y="343" text-anchor="middle" font-size="12" fill="#aab4bb">または</text>
+  <line x1="410" y1="338" x2="550" y2="338" stroke="#e3eaee"/>
+
+  <text x="210" y="378" font-size="13" font-weight="700" fill="#5b6770">既存の事業所に参加する</text>
+  <rect x="210" y="388" width="340" height="44" rx="9" fill="#f1f5f7" stroke="#e3eaee"/>
+  <text x="226" y="415" font-size="13" fill="#aab4bb">参加コード（管理者から共有）</text>
+  <rect x="210" y="442" width="340" height="46" rx="9" fill="url(#g)"/>
+  <text x="380" y="470" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">参加する</text>
+</svg>

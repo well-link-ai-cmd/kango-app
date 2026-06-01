@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 540" font-family="'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5fd3e0"/><stop offset="1" stop-color="#d98fd0"/></linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#1a2a33" flood-opacity="0.08"/></filter>
+  </defs>
+  <rect width="820" height="540" fill="#eef3f6"/>
+  <!-- header -->
+  <rect x="0" y="0" width="820" height="92" fill="#ffffff"/>
+  <text x="40" y="40" font-size="12" font-weight="700" letter-spacing="1" fill="#18b6c9">WELL-LINK AI</text>
+  <text x="40" y="64" font-size="19" font-weight="700" fill="#1a1f24">AI訪問看護記録アシスト</text>
+  <text x="40" y="82" font-size="12" fill="#9aa6ad">利用者一覧（3名）</text>
+  <rect x="560" y="28" width="120" height="40" rx="20" fill="#fff" stroke="#18b6c9"/>
+  <text x="620" y="53" text-anchor="middle" font-size="13" font-weight="700" fill="#18b6c9">＋ 利用者追加</text>
+  <circle cx="710" cy="48" r="18" fill="#fff" stroke="#dfe7ec"/><text x="710" y="53" text-anchor="middle" font-size="14">⚙️</text>
+  <circle cx="756" cy="48" r="18" fill="#fff" stroke="#dfe7ec"/><text x="756" y="53" text-anchor="middle" font-size="13">⎋</text>
+
+  <!-- patient cards -->
+  <g filter="url(#sh)">
+    <rect x="40" y="120" width="740" height="74" rx="14" fill="#fff"/>
+    <rect x="40" y="208" width="740" height="74" rx="14" fill="#fff"/>
+    <rect x="40" y="296" width="740" height="74" rx="14" fill="#fff"/>
+  </g>
+  <!-- row template -->
+  <g>
+    <circle cx="78" cy="157" r="20" fill="#e7f6f8"/><text x="78" y="162" text-anchor="middle" font-size="15" fill="#18b6c9">田</text>
+    <text x="112" y="152" font-size="15" font-weight="700" fill="#1a1f24">田中 太郎</text>
+    <text x="112" y="172" font-size="12" fill="#9aa6ad">82歳・要介護3・脳梗塞後遺症</text>
+    <rect x="690" y="142" width="64" height="28" rx="14" fill="#eef7f0"/><text x="722" y="160" text-anchor="middle" font-size="11" fill="#15b886">記録 12</text>
+  </g>
+  <g>
+    <circle cx="78" cy="245" r="20" fill="#fbeef6"/><text x="78" y="250" text-anchor="middle" font-size="15" fill="#c56fb0">佐</text>
+    <text x="112" y="240" font-size="15" font-weight="700" fill="#1a1f24">佐藤 花子</text>
+    <text x="112" y="260" font-size="12" fill="#9aa6ad">76歳・要介護2・心不全</text>
+    <rect x="690" y="230" width="64" height="28" rx="14" fill="#eef7f0"/><text x="722" y="248" text-anchor="middle" font-size="11" fill="#15b886">記録 8</text>
+  </g>
+  <g>
+    <circle cx="78" cy="333" r="20" fill="#eef0fb"/><text x="78" y="338" text-anchor="middle" font-size="15" fill="#6f7fc5">鈴</text>
+    <text x="112" y="328" font-size="15" font-weight="700" fill="#1a1f24">鈴木 一郎</text>
+    <text x="112" y="348" font-size="12" fill="#9aa6ad">90歳・要介護4・認知症</text>
+    <rect x="678" y="318" width="76" height="28" rx="14" fill="#fff5e9"/><text x="716" y="336" text-anchor="middle" font-size="11" fill="#e0922b">引継ぎあり</text>
+  </g>
+
+  <!-- voice pill -->
+  <rect x="300" y="466" width="220" height="44" rx="22" fill="#1f2a30"/>
+  <text x="410" y="493" text-anchor="middle" font-size="13" fill="#fff">🎤 クリックして音声入力を開始</text>
+</svg>
