@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getPatients, savePatient, getNursingContents, saveNursingContents, generateId, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem } from "@/lib/storage";
+import { getPatients, savePatient, getNursingContents, saveNursingContents, generateId, type CareLevel, type DoctorInfo, type CareManagerInfo, type NursingContentItem, type StoredImage } from "@/lib/storage";
 import { ArrowLeft, ChevronDown, ChevronUp, FileText, Plus, Trash2, ClipboardList, Home } from "lucide-react";
 import Link from "next/link";
+import ImageUploader from "@/components/ImageUploader";
 
 const CARE_LEVELS: CareLevel[] = [
   "なし","要支援1","要支援2","要介護1","要介護2","要介護3","要介護4","要介護5",
@@ -26,6 +27,11 @@ export default function EditPatientPage() {
   const [openCareManager, setOpenCareManager] = useState(false);
   // 旧「ケアプラン・訪問方針」欄はUI廃止。既存データは保持し、看護計画書への移行バナーで参照する
   const [carePlan, setCarePlan] = useState("");
+
+  // ケアマネのケアプラン（写真＋任意テキスト）
+  const [openCareManagerPlan, setOpenCareManagerPlan] = useState(false);
+  const [careManagerPlanImages, setCareManagerPlanImages] = useState<StoredImage[]>([]);
+  const [careManagerPlanText, setCareManagerPlanText] = useState("");
 
   // ケア内容リスト（編集対応）
   const [nursingContentItems, setNursingContentItems] = useState<NursingContentItem[]>([]);
@@ -58,6 +64,11 @@ export default function EditPatientPage() {
         setOpenCareManager(true);
       }
       setCarePlan(patient.carePlan ?? "");
+      if (patient.careManagerPlan) {
+        setCareManagerPlanImages(patient.careManagerPlan.images ?? []);
+        setCareManagerPlanText(patient.careManagerPlan.text ?? "");
+        setOpenCareManagerPlan(true);
+      }
       // 初期SOAP記録を読み込み（統合テキスト形式に変換）
       // ケア内容リストを読み込み
       const nc = await getNursingContents(id);
@@ -141,6 +152,10 @@ export default function EditPatientPage() {
       doctors: validDoctors.length > 0 ? validDoctors : undefined,
       careManagers: validCMs.length > 0 ? validCMs : undefined,
       carePlan: carePlan.trim() || undefined,
+      careManagerPlan:
+        careManagerPlanImages.length > 0 || careManagerPlanText.trim()
+          ? { images: careManagerPlanImages, text: careManagerPlanText.trim() || undefined }
+          : undefined,
       initialSoapRecords: initialSoapRecords.length > 0 ? initialSoapRecords : undefined,
     });
 
@@ -334,6 +349,48 @@ export default function EditPatientPage() {
                 <button type="button" onClick={() => setCareManagersList([...careManagersList, { name: "", office: "" }])} className="btn-outline w-full justify-center">
                   <Plus size={16} /> もう1件追加
                 </button>
+              </div>
+            )}
+          </div>
+
+          {/* Care Manager Plan（ケアマネのケアプラン） */}
+          <div className="card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOpenCareManagerPlan(!openCareManagerPlan)}
+              className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-[rgba(0,200,200,0.02)]"
+            >
+              <div className="text-left flex items-start gap-3">
+                <FileText size={20} style={{ color: "var(--accent-cyan)", marginTop: "2px" }} />
+                <div>
+                  <p className="font-semibold" style={{ color: "var(--text-primary)" }}>ケアマネのケアプラン</p>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>写真や本文を登録すると、看護計画立案でAIが最優先で参照します（任意）</p>
+                </div>
+              </div>
+              {openCareManagerPlan
+                ? <ChevronUp size={18} style={{ color: "var(--text-muted)" }} />
+                : <ChevronDown size={18} style={{ color: "var(--text-muted)" }} />}
+            </button>
+            {openCareManagerPlan && (
+              <div className="px-5 pb-5 space-y-3 animate-fade-in">
+                <ImageUploader
+                  value={careManagerPlanImages}
+                  onChange={setCareManagerPlanImages}
+                  prefix={`care-manager-plan/${id}`}
+                  label="ケアプランの写真"
+                  hint="紙のケアプランを撮影・スキャンして添付できます（複数枚可）。看護計画の立案時にAIが画像を読み取って最優先で参照します。"
+                />
+                <div>
+                  <label className="input-label">補足テキスト（任意）</label>
+                  <textarea
+                    rows={3}
+                    className="input-field text-sm"
+                    style={{ resize: "vertical", fontFamily: "inherit" }}
+                    placeholder="ケアプランの要点をテキストで補足できます（写真がない場合はこちらだけでも可）"
+                    value={careManagerPlanText}
+                    onChange={(e) => setCareManagerPlanText(e.target.value)}
+                  />
+                </div>
               </div>
             )}
           </div>
