@@ -30,6 +30,56 @@ export interface CareManagerInfo {
   phone?: string;     // 電話番号
 }
 
+// === 画像アップロード（Supabase Storage: patient-files バケット）===
+
+// 保存済み画像の参照（バケット内パスを保持。表示時に署名付きURLへ変換）
+export interface StoredImage {
+  path: string;        // バケット内パス
+  uploadedAt: string;  // ISO日時
+  caption?: string;
+}
+
+// ケアマネのケアプラン（写真＋任意テキスト。看護計画立案の最優先資料）
+export interface CareManagerPlan {
+  images: StoredImage[];
+  text?: string;
+}
+
+export const PATIENT_FILES_BUCKET = "patient-files";
+
+const IMAGE_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+/** 画像を patient-files バケットにアップロードし、参照(StoredImage)を返す */
+export async function uploadPatientImage(file: File, prefix: string): Promise<StoredImage> {
+  const ext = IMAGE_EXT[file.type] ?? (file.name.split(".").pop() || "bin");
+  const path = `${prefix}/${generateId()}.${ext}`;
+  const { error } = await getSupabase()
+    .storage.from(PATIENT_FILES_BUCKET)
+    .upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (error) throw new Error(`画像のアップロードに失敗しました: ${error.message}`);
+  return { path, uploadedAt: new Date().toISOString() };
+}
+
+/** private バケット表示用の署名付きURL（既定1時間） */
+export async function getImageSignedUrl(path: string, expiresInSec = 3600): Promise<string | null> {
+  const { data, error } = await getSupabase()
+    .storage.from(PATIENT_FILES_BUCKET)
+    .createSignedUrl(path, expiresInSec);
+  if (error) { console.error("getImageSignedUrl error:", error); return null; }
+  return data?.signedUrl ?? null;
+}
+
+/** Storage から画像を削除（参照側配列の更新は呼び出し元で行う） */
+export async function deletePatientImage(path: string): Promise<void> {
+  const { error } = await getSupabase().storage.from(PATIENT_FILES_BUCKET).remove([path]);
+  if (error) console.error("deletePatientImage error:", error);
+}
+
 export interface Patient {
   id: string;
   name: string;
@@ -59,6 +109,9 @@ export interface Patient {
 
   // ケアプラン・担当者会議内容（AI精度向上用）
   carePlan?: string;          // ケアプラン・担当者会議での方針
+
+  // ケアマネのケアプラン（写真をAIが読み取り、看護計画立案の最優先資料にする）
+  careManagerPlan?: CareManagerPlan;
 
   // 導入時に貼り付ける直近のSOAP記録（カイポケ等からの貼り付け生テキスト。医療用語・言い回しの参考に使う）
   initialSoapRecords?: {
@@ -240,6 +293,7 @@ function patientToRow(p: Patient, userId?: string): Record<string, any> {
     care_manager_address: p.careManagerAddress ?? null,
     care_manager_phone: p.careManagerPhone ?? null,
     care_plan: p.carePlan ?? null,
+    care_manager_plan: p.careManagerPlan ?? null,
     initial_soap_records: p.initialSoapRecords ?? null,
     created_at: p.createdAt,
   };
@@ -280,6 +334,7 @@ function rowToPatient(row: any): Patient {
     doctors: doctors.length > 0 ? doctors : undefined,
     careManagers: careManagers.length > 0 ? careManagers : undefined,
     carePlan: row.care_plan ?? undefined,
+    careManagerPlan: row.care_manager_plan ?? undefined,
     initialSoapRecords: normalizeInitialSoap(row.initial_soap_records),
     createdAt: row.created_at,
   };
@@ -702,6 +757,9 @@ export interface PressureUlcerPlan {
   // 評価記録
   evaluationNotes?: string;
 
+  // 褥瘡の写真（Supabase Storage の patient-files バケット）
+  photos?: StoredImage[];
+
   // 下書きフラグ（AI生成前の途中状態）
   isDraft?: boolean;
 
@@ -738,6 +796,7 @@ function pressureUlcerPlanFromRow(row: any): PressureUlcerPlan {
     planNutrition: row.plan_nutrition ?? undefined,
     planRehab: row.plan_rehab ?? undefined,
     evaluationNotes: row.evaluation_notes ?? undefined,
+    photos: row.photos ?? [],
     isDraft: row.is_draft ?? false,
     aiModel: row.ai_model ?? undefined,
     aiPromptVersion: row.ai_prompt_version ?? undefined,
@@ -804,6 +863,7 @@ export async function savePressureUlcerPlan(
     plan_nutrition: plan.planNutrition ?? null,
     plan_rehab: plan.planRehab ?? null,
     evaluation_notes: plan.evaluationNotes ?? null,
+    photos: plan.photos ?? [],
     is_draft: plan.isDraft ?? false,
     ai_model: plan.aiModel ?? null,
     ai_prompt_version: plan.aiPromptVersion ?? null,
