@@ -601,7 +601,7 @@ export default function NursingCarePlanForm({
           <UserInputBadge />
         </h2>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="input-label">作成年月日</label>
             <input
@@ -656,7 +656,7 @@ export default function NursingCarePlanForm({
           作成者
           <UserInputBadge />
         </h2>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="input-label">作成者①氏名</label>
             <input type="text" className="input-field" value={authorName} onChange={(e) => setAuthorName(e.target.value)} />
