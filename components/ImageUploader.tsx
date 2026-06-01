@@ -7,7 +7,7 @@ import {
   deletePatientImage,
   type StoredImage,
 } from "@/lib/storage";
-import { ImagePlus, Trash2, Loader2 } from "lucide-react";
+import { ImagePlus, Trash2, Loader2, FileText, FileSpreadsheet } from "lucide-react";
 
 interface ImageUploaderProps {
   value: StoredImage[];
@@ -18,13 +18,39 @@ interface ImageUploaderProps {
   hint?: string;
   /** 最大枚数（既定10） */
   max?: number;
+  /** 画像に加えて PDF / Excel も登録可にする（既定: 画像のみ） */
+  allowFiles?: boolean;
+}
+
+type FileKind = "image" | "pdf" | "excel" | "other";
+
+function fileKind(path: string): FileKind {
+  const ext = path.toLowerCase().split(".").pop() || "";
+  if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) return "image";
+  if (ext === "pdf") return "pdf";
+  if (ext === "xlsx" || ext === "xls") return "excel";
+  return "other";
+}
+
+function isAccepted(file: File, allowFiles: boolean): boolean {
+  if (file.type.startsWith("image/")) return true;
+  if (!allowFiles) return false;
+  const name = file.name.toLowerCase();
+  return (
+    file.type === "application/pdf" ||
+    name.endsWith(".pdf") ||
+    file.type.includes("spreadsheet") ||
+    file.type === "application/vnd.ms-excel" ||
+    name.endsWith(".xlsx") ||
+    name.endsWith(".xls")
+  );
 }
 
 /**
- * 画像アップロード用の共通コンポーネント。
+ * 画像（＋任意でPDF/Excel）アップロード用の共通コンポーネント。
  * - Supabase Storage（patient-files バケット）へアップロードし、参照(StoredImage[])を onChange で返す
  * - private バケットのため表示は署名付きURLで行う
- * - スマホでは「写真を追加」からカメラ/ライブラリを選択可能
+ * - allowFiles=true で PDF / Excel も登録可（画像は枠内プレビュー、ファイルはアイコン＋「開く」）
  */
 export default function ImageUploader({
   value,
@@ -33,6 +59,7 @@ export default function ImageUploader({
   label,
   hint,
   max = 10,
+  allowFiles = false,
 }: ImageUploaderProps) {
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
@@ -66,7 +93,7 @@ export default function ImageUploader({
     try {
       const added: StoredImage[] = [];
       for (const file of Array.from(files)) {
-        if (!file.type.startsWith("image/")) continue;
+        if (!isAccepted(file, allowFiles)) continue;
         if (value.length + added.length >= max) break;
         const img = await uploadPatientImage(file, prefix);
         added.push(img);
@@ -84,6 +111,10 @@ export default function ImageUploader({
     await deletePatientImage(path);
   }
 
+  const acceptAttr = allowFiles
+    ? "image/*,application/pdf,.pdf,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    : "image/*";
+
   return (
     <div className="space-y-2">
       {label && <p className="input-label">{label}</p>}
@@ -95,39 +126,69 @@ export default function ImageUploader({
 
       {value.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
-          {value.map((img) => (
-            <div
-              key={img.path}
-              className="relative rounded-lg overflow-hidden"
-              style={{ background: "var(--bg-tertiary)", aspectRatio: "1 / 1" }}
-            >
-              {urls[img.path] ? (
-                // 署名付きURLの動的画像のため next/image ではなく img を使用
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={urls[img.path]}
-                  alt="登録画像"
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              ) : (
-                <div
-                  className="flex items-center justify-center"
-                  style={{ width: "100%", height: "100%", color: "var(--text-muted)" }}
-                >
-                  <Loader2 size={18} className="animate-spin" />
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => handleRemove(img.path)}
-                aria-label="削除"
-                className="absolute top-1 right-1 rounded-full p-1"
-                style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}
+          {value.map((img) => {
+            const kind = fileKind(img.path);
+            const url = urls[img.path];
+            return (
+              <div
+                key={img.path}
+                className="relative rounded-lg overflow-hidden"
+                style={{ background: "var(--bg-tertiary)", aspectRatio: "1 / 1" }}
               >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
+                {kind === "image" ? (
+                  url ? (
+                    // 署名付きURLの動的画像のため next/image ではなく img を使用
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={url}
+                      alt="登録画像"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <div
+                      className="flex items-center justify-center"
+                      style={{ width: "100%", height: "100%", color: "var(--text-muted)" }}
+                    >
+                      <Loader2 size={18} className="animate-spin" />
+                    </div>
+                  )
+                ) : (
+                  // PDF / Excel / その他ファイル: アイコン＋種別＋「開く」
+                  <a
+                    href={url || undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex flex-col items-center justify-center gap-1"
+                    style={{ width: "100%", height: "100%", color: "var(--text-secondary)", textDecoration: "none", padding: "8px" }}
+                    title="開く"
+                  >
+                    {kind === "pdf" ? (
+                      <FileText size={26} style={{ color: "#d9534f" }} />
+                    ) : kind === "excel" ? (
+                      <FileSpreadsheet size={26} style={{ color: "#1e8e5a" }} />
+                    ) : (
+                      <FileText size={26} />
+                    )}
+                    <span style={{ fontSize: "0.7rem", fontWeight: 600 }}>
+                      {kind === "pdf" ? "PDF" : kind === "excel" ? "Excel" : "ファイル"}
+                    </span>
+                    <span style={{ fontSize: "0.6rem", color: "var(--text-muted)" }}>
+                      {url ? "タップで開く" : "..."}
+                    </span>
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleRemove(img.path)}
+                  aria-label="削除"
+                  className="absolute top-1 right-1 rounded-full p-1"
+                  style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -141,10 +202,10 @@ export default function ImageUploader({
           ) : (
             <ImagePlus size={16} />
           )}
-          {uploading ? "アップロード中..." : "写真を追加"}
+          {uploading ? "アップロード中..." : allowFiles ? "写真・ファイルを追加" : "写真を追加"}
           <input
             type="file"
-            accept="image/*"
+            accept={acceptAttr}
             multiple
             hidden
             disabled={uploading}

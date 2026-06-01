@@ -193,6 +193,12 @@ export interface AiImageInput {
   data: string; // base64（"data:..." プレフィックスは付けない）
 }
 
+/** ドキュメント入力。Claude はPDFを直接読める（document ブロック）。 */
+export interface AiDocumentInput {
+  mediaType: "application/pdf";
+  data: string; // base64
+}
+
 interface GenerateOptions {
   /** 出力トークン上限。褥瘡計画書など長文出力時は8192等に増やす。未指定時は4096 */
   maxTokens?: number;
@@ -209,6 +215,8 @@ interface GenerateOptions {
   cacheSystemTtl?: "5m" | "1h";
   /** 画像入力（Claude vision）。指定するとユーザーメッセージ先頭に画像ブロックを付与する。 */
   images?: AiImageInput[];
+  /** ドキュメント入力（PDF）。指定するとユーザーメッセージ先頭に document ブロックを付与する。 */
+  documents?: AiDocumentInput[];
 }
 
 const MODEL_IDS: Record<NonNullable<GenerateOptions["model"]>, string> = {
@@ -258,16 +266,21 @@ export async function generateAiResponse(
 
   // 画像（vision）があればユーザーメッセージを「画像ブロック…＋テキスト」の配列にする。
   // 画像なしなら従来どおり文字列（後方互換）。
-  const userContent =
-    options?.images && options.images.length > 0
-      ? [
-          ...options.images.map((img) => ({
-            type: "image" as const,
-            source: { type: "base64" as const, media_type: img.mediaType, data: img.data },
-          })),
-          { type: "text" as const, text: prompt },
-        ]
-      : prompt;
+  const hasMedia =
+    (options?.images?.length ?? 0) > 0 || (options?.documents?.length ?? 0) > 0;
+  const userContent = hasMedia
+    ? [
+        ...(options?.documents ?? []).map((doc) => ({
+          type: "document" as const,
+          source: { type: "base64" as const, media_type: doc.mediaType, data: doc.data },
+        })),
+        ...(options?.images ?? []).map((img) => ({
+          type: "image" as const,
+          source: { type: "base64" as const, media_type: img.mediaType, data: img.data },
+        })),
+        { type: "text" as const, text: prompt },
+      ]
+    : prompt;
 
   // 一過性エラー（Claude 過負荷・レート制限・ネットワーク瞬断）は指数バックオフで自動リトライ。
   // 看護師は画面の前で待たされているので、リトライ回数は控えめ（合計3回試行＝2回までリトライ）に抑える。

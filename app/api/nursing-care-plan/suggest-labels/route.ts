@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
-import { loadCarePlanImages } from "@/lib/care-plan-images";
+import { loadCarePlanAttachments } from "@/lib/care-plan-images";
 import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
   // 直近1ヶ月SOAP（最大10件）と active_plan を Supabase から取得
   const { recentSoaps, activePlan } = await fetchContext(body.patientId);
   // ケアマネのケアプラン写真を Claude vision 用に取得（最優先資料）
-  const carePlanImages = await loadCarePlanImages(body.careManagerPlanImagePaths);
+  const carePlanAttachments = await loadCarePlanAttachments(body.careManagerPlanImagePaths);
 
   const systemPrompt = buildSystemPrompt();
   const userPrompt = buildUserPrompt(body, recentSoaps, activePlan);
@@ -112,7 +112,8 @@ export async function POST(req: NextRequest) {
       timeoutMs: 90000,
       temperature: 0.2,
       tool,
-      images: carePlanImages,
+      images: carePlanAttachments.images,
+      documents: carePlanAttachments.documents,
     });
 
     if (!response.toolInput) {

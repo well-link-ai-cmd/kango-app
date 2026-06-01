@@ -319,8 +319,9 @@ export default function NewPatientPage() {
                   value={careManagerPlanImages}
                   onChange={setCareManagerPlanImages}
                   prefix={`care-manager-plan/${patientId}`}
-                  label="ケアプランの写真"
-                  hint="紙のケアプランを撮影・スキャンして添付できます（複数枚可）。看護計画の立案時にAIが画像を読み取って最優先で参照します。"
+                  label="ケアプラン（写真・PDF・Excel）"
+                  hint="紙は撮影・スキャン、データはPDF/Excelで添付できます（複数可）。看護計画の立案時にAIが写真・PDFを読み取って最優先で参照します（Excelは保存・閲覧のみ）。"
+                  allowFiles
                 />
                 <div>
                   <label className="input-label">補足テキスト（任意）</label>
