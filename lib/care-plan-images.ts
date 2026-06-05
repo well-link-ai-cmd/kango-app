@@ -20,12 +20,16 @@ export interface CarePlanAttachments {
 
 /**
  * patient-files バケットのパス配列を、サーバー側でダウンロードして
- * Claude に渡せる添付（画像=vision / PDF=document）へ変換する。
+ * Claude に渡せる添付（画像=vision）へ変換する。
  * - 画像（jpeg/png/webp/gif）→ images（Claude vision）
- * - PDF → documents（Claude が直接読む）
- * - Excel 等の未対応形式はスキップ（保存・閲覧は可だが現状AIには渡さない）
+ * - PDF・Excel 等はAIに渡さない（保存・閲覧のみ）
+ *   ※ ケアプランPDFには利用者の氏名・住所・生年月日などの個人情報が含まれるため、
+ *     Anthropic へ送らない方針（個人情報の越境送信を避ける）。
+ *     ケアプランの内容をAIに反映したい場合は、個人情報をマスクした写真で登録してもらう運用とする。
  * - 認証済みユーザーの Supabase クライアントで取得（RLSに従う）
  * - max 件で打ち切り（トークン/コスト保護）
+ *
+ * documents は後方互換のため常に空配列を返す（呼び出し側の signature 維持）。
  */
 export async function loadCarePlanAttachments(
   paths: string[] | undefined,
@@ -48,10 +52,10 @@ export async function loadCarePlanAttachments(
       const imageType = ALLOWED_IMAGE[type];
       if (imageType) {
         result.images.push({ mediaType: imageType, data: buf.toString("base64") });
-      } else if (type === "application/pdf" || path.toLowerCase().endsWith(".pdf")) {
-        result.documents.push({ mediaType: "application/pdf", data: buf.toString("base64") });
       }
-      // それ以外（Excel等）はAIには渡さない（保存・閲覧は可）
+      // 画像以外（PDF・Excel 等）はAIに渡さない（保存・閲覧のみ）。
+      // PDFは個人情報（氏名・住所・生年月日等）を含むため Anthropic へ送らない。
+      // 内容をAIに反映したい場合は、個人情報をマスクした写真で登録してもらう。
     } catch {
       // 1件の失敗で全体を止めない
     }

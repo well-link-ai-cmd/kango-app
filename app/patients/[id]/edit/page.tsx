@@ -375,13 +375,21 @@ export default function EditPatientPage() {
             </button>
             {openCareManagerPlan && (
               <div className="px-5 pb-5 space-y-3 animate-fade-in">
+                <div
+                  className="rounded-lg px-3 py-2 text-xs leading-relaxed"
+                  style={{ background: "rgba(217,83,79,0.08)", border: "1px solid rgba(217,83,79,0.35)", color: "var(--text-secondary)" }}
+                >
+                  ⚠️ <strong>氏名・住所・生年月日などの個人情報が写らないように撮影してください。</strong>
+                  紙やデータの個人情報部分は、紙・指で隠す／その部分を避けて撮るなどでOKです。
+                  AIが読み取るのは「課題・援助目標・サービス内容」だけで、個人情報は不要です。
+                  PDFで届いた場合も、画面に表示して個人情報を隠した状態で写真に撮って登録してください。
+                </div>
                 <ImageUploader
                   value={careManagerPlanImages}
                   onChange={setCareManagerPlanImages}
                   prefix={`care-manager-plan/${id}`}
-                  label="ケアプラン（写真・PDF・Excel）"
-                  hint="紙は撮影・スキャン、データはPDF/Excelで添付できます（複数可）。看護計画の立案時にAIが写真・PDFを読み取って最優先で参照します（Excelは保存・閲覧のみ）。"
-                  allowFiles
+                  label="ケアプラン（写真）"
+                  hint="個人情報を隠した写真で登録してください（複数可）。看護計画の立案時にAIが写真を読み取って最優先で参照します。"
                 />
                 <div>
                   <label className="input-label">補足テキスト（任意）</label>

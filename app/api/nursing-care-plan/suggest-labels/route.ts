@@ -262,7 +262,8 @@ function buildUserPrompt(
 ): string {
   const { patient, conferenceMemo, oldCarePlan, careManagerPlanText } = input;
 
-  const hasCarePlanImage = !!(input.careManagerPlanImagePaths && input.careManagerPlanImagePaths.length > 0);
+  // 画像のみAIに送られる（PDF等は送らない）ため、添付画像の有無は画像拡張子で判定する
+  const hasCarePlanImage = (input.careManagerPlanImagePaths ?? []).some((p) => /\.(jpe?g|png|webp|gif)$/i.test(p));
   const careManagerPlanSection =
     hasCarePlanImage || careManagerPlanText?.trim()
       ? `\n【ケアマネのケアプラン（最優先で参照）】\n${
