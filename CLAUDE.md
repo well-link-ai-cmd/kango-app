@@ -1,5 +1,17 @@
 # kango-app — AI訪問看護記録アシスト
 
+## 引き継ぎ（最終更新: 2026-06-05 — ケアプランPDFの個人情報対策・本番投入済み）
+
+### このセッションで完了（PR #28 merged）
+- **ケアプランの個人情報をAIに送らない方針へ変更**（背景：ケアマネのケアプランPDFには利用者の氏名・住所・生年月日が含まれ、AI生成時にそのまま Anthropic へ送信されていた。アプリのテキスト側は「年齢・主病名・要介護度」だけに絞っているのに、PDF/画像添付だけが防御を素通りしていた）：
+  - **ケアプラン添付を「写真のみ」に変更**（基礎情報の新規 `app/patients/new`・編集 `app/patients/[id]/edit`）。`ImageUploader` の `allowFiles` を外し、PDF/Excelのファイル添付を廃止。`accept="image/*"` なのでスマホはカメラ起動/フォトライブラリ両対応。紙でもPDFでも「個人情報を隠して写真に撮って登録」する運用に統一（ITリテラシー低い利用者向けに「打つ or 撮る」の2択へ単純化）。
+  - **登録UIに赤枠の注意書き追加**：「氏名・住所・生年月日が写らないように撮影/マスクしてください。AIが読むのは課題・援助目標・サービス内容だけ。PDFで届いた場合も画面表示して隠した状態で写真に撮って登録」。
+  - **`lib/care-plan-images.ts` の `loadCarePlanAttachments` はPDFをAIに渡さない**（保存・閲覧のみ。Excelと同じ扱い）。既存のレガシーPDFも送信されない（多重防御）。`documents` は後方互換で常に空配列を返す。
+  - **看護計画3ルートの添付画像判定を画像拡張子ベースに変更**（`generate`/`generate-issues`/`suggest-labels` の `hasCarePlanImage`）。PDFのみ登録の患者にAIが「添付画像を読め」と誤指示しないように。
+  - 検証：`tsc --noEmit` パス・lintエラー0。
+- ⚠️ **未対応（運用判断として残る）**：アプリは元々SOAP・主病名等の医療情報をClaudeに送る設計。医療情報の越境送信そのものの扱い（Anthropicの非学習・最大30日保持の規約確認、必要に応じ ZDR 契約、利用者・家族の同意）は本PR対象外。他事業所展開時に要検討。
+- 🔜 **本番デプロイ後の確認**：実機で「個人情報を隠して撮影→登録→看護計画生成」が今まで通り動くか。`document` ブロック廃止で AI が画像のみ参照になっている点も確認。
+
 ## 引き継ぎ（最終更新: 2026-06-01 — マルチテナント化＋周辺機能 一通り完了・本番投入済み）
 
 ### このセッションで完了（PR #17〜#26 merged・migration 011〜014 本番適用＆検証済み）
@@ -13,6 +25,7 @@
 - **migration 014 + 評価リマインダ**：`organizations.care_plan_review_months`（既定6）＋`set_care_plan_review_months`。管理画面で評価周期(1/3/6/12/カスタム月)を設定→「最終評価日（作成日 or 課題評価日の新しい方）＋周期」を過ぎた有効計画に、看護計画書ページのバナー＋利用者一覧の「評価時期」バッジ。`isCarePlanReviewDue`/`getCarePlanReviewMonths`/`getPatientsNeedingPlanReview`。※周期は事業所一律。
 - **画像自動圧縮**（`compressImage`）：長辺2000px・JPEG化（2〜4MB→200〜600KB）。EXIF除去の副次効果。
 - **ケアプランの PDF/Excel 添付**：`ImageUploader` の `allowFiles`、`care-plan-images.ts` の `loadCarePlanAttachments`（画像=vision / PDF=document を Claude へ）。看護計画3ルート反映。`ai-client.ts` に `AiDocumentInput`(PDF) 追加。**Excelは保存・閲覧のみ（AI読込は未対応）**。
+  - ⚠️ **2026-06-05（PR #28）で方針変更**：個人情報対策のため、ケアプラン添付は**写真のみ**に変更し、PDFはAIに渡さなくなった（保存・閲覧のみ）。`allowFiles` は外し、`loadCarePlanAttachments` の PDF→document 経路は廃止。最新の扱いは冒頭 2026-06-05 の引き継ぎを参照。`ai-client.ts` の `AiDocumentInput` 自体は残置（将来用）。
 - **アプリ内 使い方ガイド**：`docs/使い方ガイド.md`（単一ソース）を `/guide` で react-markdown 表示。画像は `public/guide/`。ホームヘッダに「使い方」リンク。実スクショ16枚配置済（ログイン〜記録〜各書類〜管理）。編集者向け記述は削除済。
 - **🔴 保存失敗のUI通知**：`savePatient`/`saveNursingContents` を boolean 返却化し、各呼び出しで `SAVE_FAIL_MESSAGE` を表示（成功時のみ遷移/反映）。新規/編集・看護内容リスト・記録後の候補反映・やること・旧欄削除に適用。書類4フォームは元から表示済。
 - **旧ケアプラン欄の削除ボタン**：看護計画書ページの移行バナーに「この旧欄を削除する」追加（`carePlan` をクリア）。
