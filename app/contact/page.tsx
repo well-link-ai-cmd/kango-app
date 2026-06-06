@@ -27,6 +27,16 @@ export default function ContactPage() {
     const ok = await saveInquiry({ category, body: body.trim() });
     setLoading(false);
     if (ok) {
+      // メール通知（GAS経由）。失敗しても送信完了は妨げない（DB保存は済んでいる）。
+      try {
+        await fetch("/api/contact-notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ category, body: body.trim() }),
+        });
+      } catch {
+        // 通知メールの失敗は無視（DBには保存済み）
+      }
       setDone(true);
     } else {
       setError("送信に失敗しました。通信状況をご確認のうえ、もう一度お試しください。");

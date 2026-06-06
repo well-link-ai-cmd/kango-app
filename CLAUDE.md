@@ -13,7 +13,8 @@
 - **②監査ログ 実装済み・DB適用待ち**：`lib/audit.ts logAudit()`（fire-and-forget・例外握りつぶし）。`migrations/016 audit_logs`（org スコープRLS・閲覧は管理者・INSERT専用＝追記専用）。`lib/storage.ts` の患者/SOAP/看護内容/褥瘡/看護計画/報告書/情報提供書の save・delete に記録フックを注入（保存本体は止めない）。限界：クライアント発行のため改ざん耐性は限定的→将来サーバ側化。AI送信ログ(action `ai_send`)は今後APIルートで付与。
 - **③セキュリティヘッダ 実装済み**：`next.config.ts` に `Permissions-Policy`（camera/microphone=self で写真・音声入力は維持／geolocation/payment/usb等は無効化）。CSPはインラインstyle多用のため未導入（壊さない判断・将来Report-Onlyで計測）。
 - **④規約/プライバシー 実装済み**：`/terms`・`/privacy`（ログイン不要で閲覧可：AuthGate に PUBLIC_PATHS バイパス追加。既存ルートの認証挙動は不変）。本文は `docs/legal/利用規約.md`・`プライバシーポリシー.md`（**法務確認前ドラフト雛形・〔 〕プレースホルダ未記入**）。ログイン画面下部にリンク。
-- **⑤問い合わせフォーム 実装済み・DB適用待ち**：`/contact`（`lib/storage.ts saveInquiry`：事業所/送信者/コンテキスト自動付与）。`migrations/017 inquiries`（org スコープRLS・閲覧は管理者）。ホームヘッダに「問い合わせ」リンク。メール通知・運営閲覧は次段（C）。
+- **⑤問い合わせフォーム 実装済み・DB適用待ち**：`/contact`（`lib/storage.ts saveInquiry`：事業所/送信者/コンテキスト自動付与）。`migrations/017 inquiries`（org スコープRLS・閲覧は管理者）。ホームヘッダに「問い合わせ」リンク。
+- **⑤+ メール通知（GAS方式）実装済み・GASデプロイ待ち**：Resendではなく **GAS（Google Apps Script）で well-link-ai@05company.com のGmailから送信**（独自ドメイン認証不要・完全無料）。`integrations/gas/contact-notify.gs`（doPost・TOKEN検証・運営通知＋送信者へ自動受付返信）。`app/api/contact-notify/route.ts`（サーバ経由でGASへPOST・`CONTACT_GAS_URL`/`CONTACT_GAS_TOKEN` 未設定ならスキップ＝無影響）。`/contact` は保存後に fire-and-forget で通知。セットアップ手順は `docs/本番反映TODO_2026-06-06.md` B-5。患者個人情報はメール本文に書かない運用。
 - 🔜 **人間側の作業は `docs/本番反映TODO_2026-06-06.md` に集約**：master反映＋migration 015/016/017 を順に適用（015は適用前にバケット0件確認）／法務文面の〔 〕記入＋専門家レビュー／Anthropic越境送信(ZDR・同意)の整理／（有料）Supabase Pro でバックアップ・Sentry・Stripe。
 - 検証：`tsc --noEmit` パス・lint エラー0（既存の userRole 未使用 warning のみ）。本番ビルドのフォント取得エラーはサンドボックスのネット制限で無関係。
 
