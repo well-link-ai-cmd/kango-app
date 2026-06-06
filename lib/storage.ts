@@ -1,4 +1,5 @@
 import { getSupabase } from "./supabase";
+import { logAudit } from "./audit";
 
 // ---- 認証ヘルパー ----
 
@@ -476,6 +477,7 @@ export async function savePatient(patient: Patient): Promise<boolean> {
     .from("patients")
     .upsert(row, { onConflict: "id" });
   if (error) { console.error("savePatient error:", error); return false; }
+  logAudit("save", "patient", patient.id, { orgId, userId });
   return true;
 }
 
@@ -485,7 +487,8 @@ export async function deletePatient(id: string): Promise<void> {
     .from("patients")
     .delete()
     .eq("id", id);
-  if (error) console.error("deletePatient error:", error);
+  if (error) { console.error("deletePatient error:", error); return; }
+  logAudit("delete", "patient", id);
 }
 
 export async function getRecords(patientId?: string): Promise<SoapRecord[]> {
@@ -521,6 +524,7 @@ export async function saveRecord(record: SoapRecord): Promise<void> {
     console.error("saveRecord error:", error);
     throw new Error(error.message);
   }
+  logAudit("save", "soap_record", record.id, { orgId, userId });
 }
 
 export async function deleteRecord(id: string): Promise<void> {
@@ -528,7 +532,8 @@ export async function deleteRecord(id: string): Promise<void> {
     .from("soap_records")
     .delete()
     .eq("id", id);
-  if (error) console.error("deleteRecord error:", error);
+  if (error) { console.error("deleteRecord error:", error); return; }
+  logAudit("delete", "soap_record", id);
 }
 
 /** 特定の利用者の特定年月の記録を取得 */
@@ -623,6 +628,7 @@ export async function saveNursingContents(contents: NursingContents): Promise<bo
     .from("nursing_contents")
     .upsert(row, { onConflict: "patient_id" });
   if (error) { console.error("saveNursingContents error:", error); return false; }
+  logAudit("save", "nursing_contents", contents.patientId, { orgId, userId });
   return true;
 }
 
@@ -631,7 +637,8 @@ export async function deleteNursingContents(patientId: string): Promise<void> {
     .from("nursing_contents")
     .delete()
     .eq("patient_id", patientId);
-  if (error) console.error("deleteNursingContents error:", error);
+  if (error) { console.error("deleteNursingContents error:", error); return; }
+  logAudit("delete", "nursing_contents", patientId);
 }
 
 export function generateId(): string {
@@ -966,6 +973,7 @@ export async function savePressureUlcerPlan(
     console.error("savePressureUlcerPlan error:", error);
     return null;
   }
+  logAudit("save", "pressure_ulcer_plan", data?.id ?? plan.id, { orgId, userId });
   return pressureUlcerPlanFromRow(data);
 }
 
@@ -975,7 +983,8 @@ export async function deletePressureUlcerPlan(id: string): Promise<void> {
     .from("pressure_ulcer_plans")
     .delete()
     .eq("id", id);
-  if (error) console.error("deletePressureUlcerPlan error:", error);
+  if (error) { console.error("deletePressureUlcerPlan error:", error); return; }
+  logAudit("delete", "pressure_ulcer_plan", id);
 }
 
 // =============================================================
@@ -1451,6 +1460,7 @@ export async function saveNursingCarePlan(
     console.error("saveNursingCarePlan error:", error);
     return null;
   }
+  logAudit("save", "nursing_care_plan", data?.id ?? plan.id, { orgId, userId });
   return nursingCarePlanFromRow(data);
 }
 
@@ -1460,7 +1470,8 @@ export async function deleteNursingCarePlan(id: string): Promise<void> {
     .from("nursing_care_plans")
     .delete()
     .eq("id", id);
-  if (error) console.error("deleteNursingCarePlan error:", error);
+  if (error) { console.error("deleteNursingCarePlan error:", error); return; }
+  logAudit("delete", "nursing_care_plan", id);
 }
 
 // =============================================================
@@ -1717,6 +1728,7 @@ export async function saveVisitReport(
     console.error("saveVisitReport error:", error);
     return null;
   }
+  logAudit("save", "visit_report", data?.id ?? report.id, { orgId, userId });
   return visitReportFromRow(data);
 }
 
@@ -1726,7 +1738,8 @@ export async function deleteVisitReport(id: string): Promise<void> {
     .from("visit_reports")
     .delete()
     .eq("id", id);
-  if (error) console.error("deleteVisitReport error:", error);
+  if (error) { console.error("deleteVisitReport error:", error); return; }
+  logAudit("delete", "visit_report", id);
 }
 
 // =============================================================
@@ -1909,6 +1922,7 @@ export async function saveInfoProvision(
     console.error("saveInfoProvision error:", error);
     return null;
   }
+  logAudit("save", "info_provision", data?.id ?? provision.id, { orgId, userId });
   return infoProvisionFromRow(data);
 }
 
@@ -1918,7 +1932,39 @@ export async function deleteInfoProvision(id: string): Promise<void> {
     .from("info_provisions")
     .delete()
     .eq("id", id);
-  if (error) console.error("deleteInfoProvision error:", error);
+  if (error) { console.error("deleteInfoProvision error:", error); return; }
+  logAudit("delete", "info_provision", id);
+}
+
+// =============================================================
+// 問い合わせ（inquiries）— アプリ内サポート窓口
+// =============================================================
+
+export type InquiryCategory = "bug" | "request" | "question" | "other";
+
+/** 問い合わせを送信（DB保存）。成功で true。事業所・送信者は自動付与。 */
+export async function saveInquiry(input: {
+  category: InquiryCategory;
+  body: string;
+}): Promise<boolean> {
+  const { userId, orgId } = await getCurrentUserAndOrg();
+  if (!orgId) { console.error("saveInquiry: org not found"); return false; }
+  const { data: { user } } = await getSupabase().auth.getUser();
+  const appContext = {
+    url: typeof window !== "undefined" ? window.location.href : null,
+    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+  };
+  const { error } = await getSupabase().from("inquiries").insert({
+    org_id: orgId,
+    user_id: userId,
+    user_email: user?.email ?? null,
+    category: input.category,
+    body: input.body,
+    app_context: appContext,
+  });
+  if (error) { console.error("saveInquiry error:", error); return false; }
+  logAudit("save", "inquiry", undefined, { orgId, userId });
+  return true;
 }
 
 /** 宛先タイプ → 表示名 */

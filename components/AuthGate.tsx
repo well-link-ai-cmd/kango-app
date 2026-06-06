@@ -1,8 +1,13 @@
 "use client";
 
 import { useState, useEffect, ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+
+// ログイン不要で閲覧できる公開ページ（規約・プライバシーポリシー）。
+// ※ 既存ルートの認証挙動は変えない。新規の法務ページのみ認証をバイパスする。
+const PUBLIC_PATHS = ["/terms", "/privacy"];
 
 type AuthStep =
   | "checking"       // 認証状態確認中
@@ -27,6 +32,8 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const [newOrgName, setNewOrgName] = useState("");
   const [joinInput, setJoinInput] = useState("");
   const [createdJoinCode, setCreatedJoinCode] = useState("");
+  const pathname = usePathname();
+  const isPublicPath = PUBLIC_PATHS.includes(pathname ?? "");
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -310,6 +317,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
   // --- レンダリング ---
 
+  // 公開ページ（規約・プライバシーポリシー）はログイン不要で表示する
+  if (isPublicPath) {
+    return <>{children}</>;
+  }
+
   if (step === "checking" || step === "verifying") {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -387,6 +399,12 @@ export default function AuthGate({ children }: { children: ReactNode }) {
               <GoogleIcon />
               {loading ? "ログイン中..." : "Googleアカウントでログイン"}
             </button>
+
+            <p style={{ marginTop: "1.25rem", fontSize: "0.75rem", color: "var(--text-muted, #999)" }}>
+              <a href="/terms" style={legalLinkStyle}>利用規約</a>
+              <span style={{ margin: "0 0.4rem" }}>·</span>
+              <a href="/privacy" style={legalLinkStyle}>プライバシーポリシー</a>
+            </p>
           </>
         )}
 
@@ -649,6 +667,11 @@ const inputStyle: React.CSSProperties = {
   marginBottom: "0.75rem",
   boxSizing: "border-box",
   outline: "none",
+};
+
+const legalLinkStyle: React.CSSProperties = {
+  color: "var(--text-muted, #999)",
+  textDecoration: "underline",
 };
 
 const linkButtonStyle: React.CSSProperties = {

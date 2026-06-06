@@ -10,7 +10,12 @@
   - `supabase/migrations/015_storage_org_rls.sql`：`patient-files` バケットの RLS を 010 の「authenticated 全許可」→「先頭フォルダ=org_id が `current_org_ids()` に一致」へ。text比較で不正パスはエラーにせず拒否。
   - 運用SQL：`supabase/manual/015_verify.sql`（適用前にバケット0件＆旧パス検出を確認）/ `015_rollback.sql`。
   - 🔜 **本番反映手順**：015_verify で0件確認 → 015 を SQL Editor 適用 → 実機で写真登録/表示が従来通り動くか確認。検証：`tsc --noEmit` パス・lint 0。
-- 🔜 **次タスク**：監査ログ（新規テーブル＋非同期fire-and-forget記録／3省2GL必須）。
+- **②監査ログ 実装済み・DB適用待ち**：`lib/audit.ts logAudit()`（fire-and-forget・例外握りつぶし）。`migrations/016 audit_logs`（org スコープRLS・閲覧は管理者・INSERT専用＝追記専用）。`lib/storage.ts` の患者/SOAP/看護内容/褥瘡/看護計画/報告書/情報提供書の save・delete に記録フックを注入（保存本体は止めない）。限界：クライアント発行のため改ざん耐性は限定的→将来サーバ側化。AI送信ログ(action `ai_send`)は今後APIルートで付与。
+- **③セキュリティヘッダ 実装済み**：`next.config.ts` に `Permissions-Policy`（camera/microphone=self で写真・音声入力は維持／geolocation/payment/usb等は無効化）。CSPはインラインstyle多用のため未導入（壊さない判断・将来Report-Onlyで計測）。
+- **④規約/プライバシー 実装済み**：`/terms`・`/privacy`（ログイン不要で閲覧可：AuthGate に PUBLIC_PATHS バイパス追加。既存ルートの認証挙動は不変）。本文は `docs/legal/利用規約.md`・`プライバシーポリシー.md`（**法務確認前ドラフト雛形・〔 〕プレースホルダ未記入**）。ログイン画面下部にリンク。
+- **⑤問い合わせフォーム 実装済み・DB適用待ち**：`/contact`（`lib/storage.ts saveInquiry`：事業所/送信者/コンテキスト自動付与）。`migrations/017 inquiries`（org スコープRLS・閲覧は管理者）。ホームヘッダに「問い合わせ」リンク。メール通知・運営閲覧は次段（C）。
+- 🔜 **人間側の作業は `docs/本番反映TODO_2026-06-06.md` に集約**：master反映＋migration 015/016/017 を順に適用（015は適用前にバケット0件確認）／法務文面の〔 〕記入＋専門家レビュー／Anthropic越境送信(ZDR・同意)の整理／（有料）Supabase Pro でバックアップ・Sentry・Stripe。
+- 検証：`tsc --noEmit` パス・lint エラー0（既存の userRole 未使用 warning のみ）。本番ビルドのフォント取得エラーはサンドボックスのネット制限で無関係。
 
 ## 引き継ぎ（最終更新: 2026-06-05 — ケアプランPDFの個人情報対策・本番投入済み）
 
