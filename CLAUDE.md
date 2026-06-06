@@ -1,5 +1,17 @@
 # kango-app — AI訪問看護記録アシスト
 
+## 引き継ぎ（最終更新: 2026-06-06 — 他事業所展開レディネス評価＋S1 Storage分離 実装）
+
+### このセッションで進行中（branch: `claude/nursing-app-readiness-assessment-ArGxL`）
+- **他事業所展開レディネス評価**を実コード根拠で作成：`docs/展開レディネス評価_2026-06-06.md`。総合は「マルチテナント土台は良質／外部商用展開には4つの展開ブロッカー（①Storage分離 ②監査ログ ③規約・同意・越境送信 ④バックアップ/BCP）」。Phase 2完了・Phase 3着手前。
+- 方針：**今のアプリ挙動に影響なく・無料**で対応できる所から順番に整える。優先順 S1→監査ログ→セキュリティヘッダ→規約ページ雛形→問い合わせフォーム。
+- **S1（写真Storageのテナント分離）コード実装済み・DB適用待ち**（既存画像0件をユーザー確認済みのため無影響でクリーンに塞げる）：
+  - `lib/storage.ts uploadPatientImage`：保存パスを `<org_id>/<prefix>/<uuid>.<ext>` へ（呼び出し側 ImageUploader 等は無改修）。orgId 取得不可なら明示エラー。
+  - `supabase/migrations/015_storage_org_rls.sql`：`patient-files` バケットの RLS を 010 の「authenticated 全許可」→「先頭フォルダ=org_id が `current_org_ids()` に一致」へ。text比較で不正パスはエラーにせず拒否。
+  - 運用SQL：`supabase/manual/015_verify.sql`（適用前にバケット0件＆旧パス検出を確認）/ `015_rollback.sql`。
+  - 🔜 **本番反映手順**：015_verify で0件確認 → 015 を SQL Editor 適用 → 実機で写真登録/表示が従来通り動くか確認。検証：`tsc --noEmit` パス・lint 0。
+- 🔜 **次タスク**：監査ログ（新規テーブル＋非同期fire-and-forget記録／3省2GL必須）。
+
 ## 引き継ぎ（最終更新: 2026-06-05 — ケアプランPDFの個人情報対策・本番投入済み）
 
 ### このセッションで完了（PR #28 merged）

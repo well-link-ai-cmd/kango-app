@@ -123,9 +123,13 @@ async function compressImage(file: File, maxEdge = 2000, quality = 0.85): Promis
 
 /** 画像を patient-files バケットにアップロードし、参照(StoredImage)を返す */
 export async function uploadPatientImage(file: File, prefix: string): Promise<StoredImage> {
+  // 保存パスの先頭を所属事業所ID（org_id）にして、事業所ごとに区切る。
+  // Storage の RLS（migration 015）はこの先頭フォルダ＝org_id で他事業所を遮断する。
+  const { orgId } = await getCurrentUserAndOrg();
+  if (!orgId) throw new Error("画像のアップロードに失敗しました: 所属事業所が確認できませんでした");
   const compressed = await compressImage(file);
   const ext = IMAGE_EXT[compressed.type] ?? (compressed.name.split(".").pop() || "bin");
-  const path = `${prefix}/${generateId()}.${ext}`;
+  const path = `${orgId}/${prefix}/${generateId()}.${ext}`;
   const { error } = await getSupabase()
     .storage.from(PATIENT_FILES_BUCKET)
     .upload(path, compressed, { contentType: compressed.type || undefined, upsert: false });
