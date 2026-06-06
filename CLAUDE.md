@@ -15,6 +15,7 @@
 - **④規約/プライバシー 実装済み**：`/terms`・`/privacy`（ログイン不要で閲覧可：AuthGate に PUBLIC_PATHS バイパス追加。既存ルートの認証挙動は不変）。本文は `docs/legal/利用規約.md`・`プライバシーポリシー.md`（**法務確認前ドラフト雛形・〔 〕プレースホルダ未記入**）。ログイン画面下部にリンク。
 - **⑤問い合わせフォーム 実装済み・DB適用待ち**：`/contact`（`lib/storage.ts saveInquiry`：事業所/送信者/コンテキスト自動付与）。`migrations/017 inquiries`（org スコープRLS・閲覧は管理者）。ホームヘッダに「問い合わせ」リンク。
 - **⑤+ メール通知（GAS方式）実装済み・GASデプロイ待ち**：Resendではなく **GAS（Google Apps Script）で well-link-ai@05company.com のGmailから送信**（独自ドメイン認証不要・完全無料）。`integrations/gas/contact-notify.gs`（doPost・TOKEN検証・運営通知＋送信者へ自動受付返信）。`app/api/contact-notify/route.ts`（サーバ経由でGASへPOST・`CONTACT_GAS_URL`/`CONTACT_GAS_TOKEN` 未設定ならスキップ＝無影響）。`/contact` は保存後に fire-and-forget で通知。セットアップ手順は `docs/本番反映TODO_2026-06-06.md` B-5。患者個人情報はメール本文に書かない運用。
+- **⑤++ 問い合わせのAI自動整理（GAS+Gemini）実装済み・APIキー設定待ち**：ユーザー選択は「分類＋要約＋返信下書き（人間確認）」。`contact-notify.gs` に `_analyzeWithGemini()` 追加（`GEMINI_API_KEY` 未設定ならスキップ＝無影響）。Gemini で問い合わせを分類・緊急度・要約・返信下書き化し**運営通知メールに添える**。送信者へは定型受付返信のまま（AI文の自動送信はしない）。委託先にGoogle(Gemini/Gmail)を追加（プライバシーポリシー4項）。無料Geminiは学習利用の可能性ありのため本文に患者個人情報を書かない運用が前提。完全自動返信は医療リスクで非採用。
 - 🔜 **人間側の作業は `docs/本番反映TODO_2026-06-06.md` に集約**：master反映＋migration 015/016/017 を順に適用（015は適用前にバケット0件確認）／法務文面の〔 〕記入＋専門家レビュー／Anthropic越境送信(ZDR・同意)の整理／（有料）Supabase Pro でバックアップ・Sentry・Stripe。
 - 検証：`tsc --noEmit` パス・lint エラー0（既存の userRole 未使用 warning のみ）。本番ビルドのフォント取得エラーはサンドボックスのネット制限で無関係。
 
