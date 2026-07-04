@@ -289,71 +289,62 @@ function buildQuestionsRequest(input: CaseInput) {
     )
     .join("\n\n");
 
-  const systemPrompt = `あなたは訪問看護の記録支援AIである。目的は2つある：
-(A) 看護計画書（確定版の目標・課題）・過去記録・登録ケア内容で触れられていた項目が、今日のメモで漏れていないかを検出する（= alerts）
-(B) 今日のメモに書かれている内容のうち、情報が曖昧・不足していて記録を充実させるため追加確認が必要な点を質問する（= questions）
+  // NOTE: テストハーネスでは看護計画書のDB参照は行わない（route.ts では patientId から取得して注入する）
+  const systemPrompt = `あなたは訪問看護の記録支援AIである。目的は1つ：
+看護計画書（確定版の目標・課題）・過去記録・登録ケア内容で触れられていた項目が、今日のメモで漏れていないかを検出する（= alerts）。
 
 参照優先順位：看護計画書（確定版） > 過去記録 > 旧ケアプラン欄（フォールバック）
 
-alerts と questions は別の目的・別のソースである。同じトピックを両方に出してはならない。
-
 メモは音声入力のため誤変換がある。文脈から正しい医療用語として読み取ること（例：朝蠕動音=腸蠕動音、服部=腹部、配便=排便）。
 
-# 作業手順（必ず順番に実行）
-1. memo_covers：今日のメモ（S情報含む）に既に書かれている内容を1つ残らず列挙する
-2. expected_from_context：看護計画書の目標・課題、前回P・次回確認事項、登録済みケア内容から、今日確認または実施が期待される項目を列挙する
+# 作業手順
+1. memo_covers：今日のメモ（S情報含む）に既に書かれている内容を列挙する
+2. expected_from_context：以下の3ソースから、今日確認または実施が期待される項目を列挙する
+   (a) 看護計画書の目標・課題
+   (b) 過去3回分の記録で継続的に記載されている症状・観察・処置（前回Pの計画事項だけでなく、S/O/Aに繰り返し出てくる事項も対象。例：3回分とも創部の記載があるのに今日ない）
+   (c) 登録済みケア内容のうち、実施記載が期待される項目
 3. gaps：expected_from_context のうち memo_covers に該当がないものだけを抽出する → ここから alerts を作る
-4. memo_ambiguities：memo_covers のうち情報が曖昧・具体性に欠ける項目を抽出する（例：「排便あり」だけで量/性状不明、「創部処置実施」だけで所見なし、「疼痛訴えあり」だけで部位/程度不明）→ ここから questions を作る
-5. alerts は gaps からのみ、questions は memo_ambiguities からのみ生成する。
 
-# 絶対ルール：alerts と questions のトピック重複禁止
-同じ事項（例：「膣分泌物の経過観察」）について alerts と questions の両方に出してはならない。
-alerts に入れたトピックは questions から除外する。alerts を優先する。
-
-# 絶対ルール：questions は今日のメモにある内容を掘り下げる質問だけ
-questions は「今日のメモに書かれているが情報が足りない項目」への追加確認である。
-過去記録にあって今日のメモにない項目は alerts 側で扱うため、questions には出さない。
-今日のメモにも過去記録にもない話題を新規に聞くのは禁止（医療安全・負担増のため）。
-
-# 絶対ルール：memo_covers に十分書かれているものは聞かない
-今日のメモに既に具体的に書かれている処置・観察・発言について「〜はどうでしたか？」と聞くのは禁止。
-例：メモに「黄褐色軟便中等量あり」とあれば、便の性状は聞かない。
-迷ったら出さない。
-
-# 絶対ルール：時制
-メモは「今日の訪問で行ったこと」である。今日行った処置の効果・結果はまだ出ていないので聞かない。
-✕「眠剤を増やした」→「睡眠はどうですか？」（効果はまだ不明）
-✕「来週オペ予定」→「術後の状態は？」（まだ手術していない）
-○「前回〜した」「先週〜があった」→ その経過確認はOK
+# 絶対ルール
+- alerts は過去記録（看護計画書・過去3回の記録・登録ケア内容）由来の項目のみ。今日のメモが曖昧な点を掘り下げる質問は出さない（看護師の負担になるため）
+- 今日のメモに既に書かれている内容を再確認させない
+- 時制：今日行った処置の効果・結果はまだ出ていないので聞かない。「前回〜した」「先週〜があった」の経過確認のみOK
 
 # バイタル
-バイタルは別欄で入力されるため「バイタル記載がない」という汎用アラートは出さない。
-病態上重要な特定項目（高血圧患者の血圧等）のみピンポイントで確認してよい。
+バイタル値（体温・血圧・脈拍・SpO2・呼吸数）は別欄で入力されるため、値の記載漏れアラートは出さない（「血圧の記載がない」等は不可）。
+ただしバイタルに紐づく処置・対応（酸素流量の調整、発熱時対応、頓用薬の使用等）が前回Pや看護計画にある場合、その実施記載の漏れはアラート対象とする。
 
-# 件数の上限
-- alerts：最大3件（前回P・次回確認事項・登録ケア内容で今日漏れているもの）
-- questions：最大3件（今日のメモ内で情報不足な項目の掘り下げ）
-- 本当に必要なものだけを出す。該当がなければ空配列でよい。無理に埋めない。`;
+# 件数
+- alerts：最大3件。本当に必要なものだけ。該当なしは空配列。無理に埋めない。`;
 
-  const prompt = `${carePlan ? `【ケアプラン】\n${carePlan}\n\n` : ""}${nursingContentItems && nursingContentItems.length > 0 ? `【登録済みケア内容】\n${nursingContentItems.map((item) => `・${item}`).join("\n")}\n\n` : ""}${prevText}
+  const prompt = `${carePlan ? `【ケアプラン・担当者会議の方針（旧欄・過渡期参照）】\n${carePlan}\n\n` : ""}${nursingContentItems && nursingContentItems.length > 0 ? `【登録済みケア内容】\n${nursingContentItems.map((item) => `・${item}`).join("\n")}\n\n` : ""}${prevText}
 
 ${sInput?.trim() ? `【今回のS情報】\n${sInput}\n\n` : ""}【今回の訪問メモ】
 ${rawInput}`;
 
   const questionsTool = {
     name: "output_gap_check",
-    description: "今日のメモを2軸で点検する。(A) 過去記録・ケアプラン・登録ケア内容との差分 → alerts、(B) メモ内の曖昧点 → questions。必ず memo_covers → expected_from_context → gaps → memo_ambiguities → alerts/questions の順で埋めること。",
+    description: "今日のメモを過去記録・看護計画書・登録ケア内容と照合し、漏れている項目を alerts として返す。",
     input_schema: {
       type: "object" as const,
       properties: {
-        memo_covers: { type: "array", items: { type: "string" } },
-        expected_from_context: { type: "array", items: { type: "string" } },
-        gaps: { type: "array", items: { type: "string" } },
-        memo_ambiguities: { type: "array", items: { type: "string" } },
-        alerts: { type: "array", items: { type: "string" } },
-        questions: { type: "array", items: { type: "string" } },
+        memo_covers: {
+          type: "array",
+          items: { type: "string" },
+          description: "今日の訪問メモ（S情報含む）に明示的に書かれている内容を箇条書きで列挙。内部確認用。",
+        },
+        expected_from_context: {
+          type: "array",
+          items: { type: "string" },
+          description: "看護計画書・過去3回分の継続記載事項・登録ケア内容から、今日確認/実施が期待される項目を列挙。内部確認用。",
+        },
+        alerts: {
+          type: "array",
+          items: { type: "string" },
+          description: "expected_from_context のうち memo_covers に該当がないもの。最大3件。『前回P継続：〜が記載されていない』『過去記録継続：〜の記載が今日ない』『登録ケア内容：〜の実施記載がない』形式。該当なしは空配列。",
+        },
       },
-      required: ["memo_covers", "expected_from_context", "gaps", "memo_ambiguities", "alerts", "questions"],
+      required: ["memo_covers", "expected_from_context", "alerts"],
     },
   };
 
@@ -504,18 +495,12 @@ async function runQuestions(tc: TestCase) {
   const r = response.toolInput as {
     memo_covers?: string[];
     expected_from_context?: string[];
-    gaps?: string[];
-    memo_ambiguities?: string[];
     alerts?: string[];
-    questions?: string[];
   };
 
   printSection("memo_covers（内部）", r.memo_covers ?? []);
   printSection("expected_from_context（内部）", r.expected_from_context ?? []);
-  printSection("gaps（内部・alerts元）", r.gaps ?? []);
-  printSection("memo_ambiguities（内部・questions元）", r.memo_ambiguities ?? []);
   printSection("alerts（ユーザー表示）", r.alerts ?? []);
-  printSection("questions（ユーザー表示）", r.questions ?? []);
   if (tc.expectations?.questions) printSection("期待する挙動", tc.expectations.questions);
   console.log(`\n(${elapsed}ms)`);
 }
