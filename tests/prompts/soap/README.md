@@ -164,3 +164,22 @@ questionsモード：
 `promptHash` はこの run.ts 上の systemPrompt + toolスキーマから算出する。
 ルート側だけ更新して run.ts のミラーを忘れると、baseline と post-改修の
 比較が成立しないので注意。
+
+## LLM-judge（品質ルーブリック採点）
+
+設計: `docs/SOAP品質ルーブリック設計_v1.md`（6観点・0/1/2採点・Sonnet judge）。
+観点定義は `rubric.ts` が単一ソース。基準を変えたら `RUBRIC_VERSION` を上げて CHANGELOG に記録。
+
+```bash
+# 1. スナップショット取得（生成: Haiku）
+OUTPUT_JSON=tests/prompts/soap/baseline-YYYY-MM-DD.json npx tsx tests/prompts/soap/run.ts soap all
+
+# 2. ルールベースゲート（hard-fail検知）
+npx tsx tests/prompts/soap/quality-gate.ts tests/prompts/soap/baseline-YYYY-MM-DD.json
+
+# 3. LLM-judge採点（Sonnet・約$0.10）
+OUTPUT_JSON=tests/prompts/soap/judge-YYYY-MM-DD.json npx tsx tests/prompts/soap/judge.ts tests/prompts/soap/baseline-YYYY-MM-DD.json
+```
+
+- judgeは回帰検知用。最終品質判断は看護師レビュー
+- プロンプト改修時は改修前後のjudge結果を観点別に比較し、CHANGELOGへ1行記録

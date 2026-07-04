@@ -2,6 +2,15 @@
 
 ai-record-tools-design.md の運用に従い、改修ごとに「いつ・何を変えて・何が変わったか」を1行で記録する。
 
+## 2026-07-04 — LLM-judge回帰テスト導入（ルーブリックv1.1）＋初回ベースライン
+
+- 新規ファイル: `rubric.ts`（6観点定義・judgeスキーマ）、`judge.ts`（Sonnet採点ランナー）。設計: `docs/SOAP品質ルーブリック設計_v1.md`（オーナー承認済み）
+- ベースライン: `baseline-2026-07-04.json`（promptHash=cdaecf0b・quality-gate 10/10合格）→ `judge-2026-07-04.json`
+- **judge初回スコア（総合64.2%）**: R1 O純度 0.30 / R4 P接続性 0.90 / R3 A根拠性 1.00 / R6 継続性 1.70 / R2 S真正性 1.80 / R5 監査耐性 2.00
+- 系統的な指摘（次のプロンプト改修候補）: ①O欄への評価語混入（「安定」「異常なし」「良好」がほぼ全ケース）②O欄への次回訪問予定の混入 ③Pの「継続」「確認」一語止まり ④Aの総括評価（「全身状態安定」）の根拠不足
+- ルーブリック較正 v1→v1.1: 「本人より〜との訴えあり」形式のO欄記載は設計仕様（ai-record-tools-design準拠）のため違反対象外に修正。v1初回は誤検出込みで総合60.0%だった
+- プロンプトへの反映は職場SOAPフォーマット受領後にまとめて実施（O欄の「安定」等は事業所の記録慣行と要すり合わせ。別途プラン提示→承認）
+
 ## 2026-05-29 — 基礎情報の過去SOAPを生テキスト参考化（P4）
 
 - 変更ファイル: `lib/storage.ts`, `app/patients/new/page.tsx`, `app/patients/[id]/edit/page.tsx`, `app/api/soap/route.ts`, `app/api/soap/questions/route.ts`, `tests/prompts/soap/run.ts`

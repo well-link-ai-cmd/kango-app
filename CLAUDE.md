@@ -19,9 +19,14 @@
   - 注: 引き継ぎ書の「feat/soap-prompt-caching完了」は**既に完了済みだった**（2026-05-29 commit 3445836でmaster投入・本実測で全コールcache_read=14,097を確認）
 - **③ルーブリック設計**: `docs/SOAP品質ルーブリック設計_v1.md` 作成（6観点・3段階採点・Sonnet judge・2層構成）。**オーナー承認待ち → 承認後に rubric.ts / judge.ts 実装**
 
+### 同日追記（judge実装完了・承認1〜3消化）
+- ルーブリック設計承認 → **judge実装完了**（`tests/prompts/soap/rubric.ts` / `judge.ts`）。初回ベースライン: quality-gate 10/10・judge総合64.2%（詳細は `tests/prompts/soap/CHANGELOG.md` 2026-07-04）
+- 低スコア観点: R1 O純度0.30（O欄への評価語「安定/良好/異常なし」・次回訪問予定の混入）/ R4 P接続性0.90（「継続」一語止まり）→ **プロンプト反映は職場SOAPフォーマット受領後にプラン提示**
+- 旧メモリ `project_kango_prompt_caching_pr.md` 削除済み
+
 ### 次回タスク
-1. ルーブリック設計の承認確認 → judge実装 → 初回ベースライン取得
-2. Anthropic Consoleで6月実績確認（キャッシュ有効の初フル月）→ コストレポートと突合
+1. Anthropic Console 6月実績の受領 → コストレポート突合・更新（オーナーから提供予定）
+2. 職場SOAPフォーマット受領 → R1/R4改善のプロンプト改修プラン提示 → judge前後比較
 3. hikitsugi作業リスト4以降（確認質問の上位モデルA/B、2026改定知識注入、専門特化テンプレ等）
 
 ## 引き継ぎ（2026-06-05 — ケアプランPDFの個人情報対策・本番投入済み）
