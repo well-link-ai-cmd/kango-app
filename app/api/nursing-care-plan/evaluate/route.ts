@@ -3,6 +3,7 @@ import { generateAiResponse } from "@/lib/ai-client";
 import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser } from "@/lib/supabase-server";
 
+import { MEDICAL_TERM_CORRECTIONS_COMPACT } from "@/lib/medical-term-corrections";
 /**
  * 看護計画書 評価AI生成API
  *
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
               no: { type: "integer", description: "課題の行番号（入力と同じ）" },
               evaluation: {
                 type: "string",
-                description: "評価本文（300〜500字程度の自然な自由文・1ブロック）。バイタル・症状・ADL・実施ケア・活動量・服薬の状況を時系列または項目順に簡潔に記述し、最後に方針を1文添える（体言止め『継続する。』または丁寧語『継続します。』のどちらでも可。本文の文体に揃える）。見出し（【経過サマリ】等）は付けない。",
+                description: "評価本文（300〜500字程度の自然な自由文・1ブロック）。書き方はsystem指示「評価本文の書き方」に従う。",
               },
             },
             required: ["no", "evaluation"],
@@ -209,7 +210,7 @@ function buildSystemPrompt(): string {
 - SOAPにない情報の創作
 
 # 医療用語の補正
-副雑音(×複雑音) / 緊満感(×緊張感) / 更衣(×交衣) / 洗髪(×先発) / 著明(×著名) / 褥瘡(×辱層) / 浮腫(×不種) / 嚥下(×円下) / 疼痛(×等痛) / 腸蠕動音(×朝蠕動音) / 腹部(×服部) / 排便(×配便) / 関節(×間接) / 仰臥位(×仰が位)
+${MEDICAL_TERM_CORRECTIONS_COMPACT}
 
 # 個人情報
 氏名・住所・電話番号・「〜様」は出力しない。「利用者」「本人」を使用。

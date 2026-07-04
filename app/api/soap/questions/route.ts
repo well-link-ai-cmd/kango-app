@@ -115,12 +115,12 @@ ${rawInput}`;
         memo_covers: {
           type: "array",
           items: { type: "string" },
-          description: "今日の訪問メモ（S情報含む）に明示的に書かれている内容を箇条書きで列挙。内部確認用。",
+          description: "今日の訪問メモ（S情報含む）に明示的に書かれている内容を25字以内の短句で列挙。内部確認用なので簡潔に。",
         },
         expected_from_context: {
           type: "array",
           items: { type: "string" },
-          description: "看護計画書・過去3回分の継続記載事項・登録ケア内容から、今日確認/実施が期待される項目を列挙。内部確認用。",
+          description: "看護計画書・過去3回分の継続記載事項・登録ケア内容から、今日確認/実施が期待される項目を25字以内の短句で列挙。内部確認用なので簡潔に。",
         },
         alerts: {
           type: "array",

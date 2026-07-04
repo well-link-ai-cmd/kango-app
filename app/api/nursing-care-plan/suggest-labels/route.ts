@@ -4,6 +4,7 @@ import { loadCarePlanAttachments } from "@/lib/care-plan-images";
 import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 
+import { MEDICAL_TERM_CORRECTIONS_DETAILED } from "@/lib/medical-term-corrections";
 /**
  * 看護計画書 課題ラベル候補提示API（Step 1: ラベル抽出）
  *
@@ -190,9 +191,8 @@ function buildSystemPrompt(): string {
   return `あなたは訪問看護の看護計画書作成を支援するAIである。
 入力された議事録・直近SOAP・患者情報・直前の計画書から、この患者に立てるべき看護課題のラベル候補を提案する。
 
-# 作業手順（必ず順番に実行）
-1. extracted_facts：入力から事実を列挙（由来タグ付き、誤変換補正済み）
-2. candidates：課題ラベル候補を最大${MAX_LABELS}件提案
+# 作業手順
+- candidates：課題ラベル候補を最大${MAX_LABELS}件提案
 
 # 出力形式
 Tool use（suggest_nursing_care_labels）のJSONのみ。自然文の前置き・説明は不要。
@@ -232,27 +232,8 @@ SOAPがゼロでも議事録があれば候補生成は可能。
 - 利用者の氏名・住所等を出力に含める
 
 # 医療用語の正しい表記（誤変換補正・全段階で徹底）
-extracted_facts の抽出段階から正しい用語で書くこと。
-- 副雑音（× 複雑音・服雑音）
-- 緊満感（× 緊張感・近満感）
-- 更衣（× 交衣・交依）
-- 洗髪（× 先発）
-- 著明（× 著名）
-- 褥瘡（× 辱層）
-- 浮腫（× 不種）
-- 嚥下（× 円下）
-- 喀痰（× 角痰）
-- 疼痛（× 等痛）
-- 腸蠕動音（× 朝蠕動音）
-- 腹部（× 服部）
-- 排便（× 配便）
-- 関節（× 間接・関接）
-- 仰臥位（× 仰が位）
-- 上葉（× 常用、肺野の文脈で）
-- 体動（× 胎動、呼吸・体位の文脈）
-- 性状（× 正常、便・創部・分泌物の文脈で「〜の性状」）
-- 刺入部（× 侵入部、点滴・カテーテルの文脈）
-- 咳嗽（× 外装、呼吸器症状）`;
+入力の読み取り段階から正しい用語で解釈し、出力は必ず補正後の用語で書くこと。
+${MEDICAL_TERM_CORRECTIONS_DETAILED}`;
 }
 
 function buildUserPrompt(

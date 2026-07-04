@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 ${recordsText}`;
 
   try {
-    const response = await generateAiResponse(prompt, systemPrompt);
+    const response = await generateAiResponse(prompt, systemPrompt, { temperature: 0.2 });
     const jsonMatch = response.text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
       return NextResponse.json({ error: "AIの応答を解析できませんでした" }, { status: 500 });

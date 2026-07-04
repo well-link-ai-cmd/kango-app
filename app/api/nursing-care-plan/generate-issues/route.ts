@@ -4,6 +4,7 @@ import { loadCarePlanAttachments } from "@/lib/care-plan-images";
 import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 
+import { MEDICAL_TERM_CORRECTIONS_DETAILED } from "@/lib/medical-term-corrections";
 /**
  * 看護計画書 OP/TP/EP + 看護目標 一括生成API（Step 2: 詳細生成）
  *
@@ -220,10 +221,8 @@ function buildSystemPrompt(): string {
 看護師が選択した課題ラベル群に対し、患者の実情に即した観察計画(OP)・ケア計画(TP)・指導計画(EP)、および統合的な看護目標を一発生成する。
 
 # 作業手順（必ず順番に実行）
-1. extracted_facts：入力から事実を列挙（由来タグ付き、誤変換補正済み）
-2. coverage_check：各事実を nursing_goal / 各課題の OP/TP/EP のどこに反映するかマッピング
-3. nursing_goal：看護・リハビリの目標を記述（選択課題群の上位目標として統合）
-4. issues：各ラベルに対して OP/TP/EP を生成（labels と同じ順序・件数）
+1. nursing_goal：看護・リハビリの目標を記述（選択課題群の上位目標として統合）
+2. issues：各ラベルに対して OP/TP/EP を生成（labels と同じ順序・件数）
 
 # 出力形式
 Tool use（generate_nursing_care_issues）のJSONのみ。自然文の前置き・説明は不要。
@@ -279,27 +278,8 @@ SOAPがゼロでも議事録と基本情報があれば OP/TP/EP は組み立て
 - 不確実な推論で項目を増やす（記録にない情報は推測で埋めない）
 
 # 医療用語の正しい表記（誤変換補正・全段階で徹底）
-extracted_facts の抽出段階から正しい用語で書くこと。
-- 副雑音（× 複雑音・服雑音）
-- 緊満感（× 緊張感・近満感）
-- 更衣（× 交衣・交依）
-- 洗髪（× 先発）
-- 著明（× 著名）
-- 褥瘡（× 辱層）
-- 浮腫（× 不種）
-- 嚥下（× 円下）
-- 喀痰（× 角痰）
-- 疼痛（× 等痛）
-- 腸蠕動音（× 朝蠕動音）
-- 腹部（× 服部）
-- 排便（× 配便）
-- 関節（× 間接・関接）
-- 仰臥位（× 仰が位）
-- 上葉（× 常用、肺野の文脈で）
-- 体動（× 胎動、呼吸・体位の文脈）
-- 性状（× 正常、便・創部・分泌物の文脈で『〜の性状』）
-- 刺入部（× 侵入部、点滴・カテーテルの文脈）
-- 咳嗽（× 外装、呼吸器症状）
+入力の読み取り段階から正しい用語で解釈し、出力は必ず補正後の用語で書くこと。
+${MEDICAL_TERM_CORRECTIONS_DETAILED}
 
 # 文体ルール
 - 過去計画書（active_plan）があれば、文末表現・文の長さに合わせる

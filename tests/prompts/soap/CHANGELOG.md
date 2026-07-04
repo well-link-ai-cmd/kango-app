@@ -2,6 +2,19 @@
 
 ai-record-tools-design.md の運用に従い、改修ごとに「いつ・何を変えて・何が変わったか」を1行で記録する。
 
+## 2026-07-05 — プロンプト効率化P1+P2（全12ルート調査→実装）
+
+- 背景: 6月実績の費目構造（出力41%/未キャッシュ入力38%/書込18%）を受け、全AIルートを調査。docs/APIコスト実測レポート・本セッション調査に基づく
+- promptHash: `408f69b0` → `1f675ea2`
+- **P1-1 S二重生成の廃止**: SOAP toolスキーマから `S` を削除（ti.S はコード上一度も未参照＝死出力だった）。S欄は従来どおり corrected_s_input/生S情報から機械決定。run.ts はroute.tsのS決定ロジックを再現して snapshot に注入（judge/quality-gate は実効SOAPを評価）
+- **P1-2 スキャフォルド簡潔化**: extracted_facts/coverage_check/memo_covers/expected_from_context に「25字以内の短句・内部確認用」を明示（廃止はしない＝品質機構維持）
+- **P1-3 死指示削除**: nursing-care-plan {generate,suggest-labels,generate-issues} の「extracted_facts/coverage_check を必ず実行」指示を削除（toolスキーマに出力先がなく実行不能だった）
+- **P1-4 temperature 0.2 明示**: pressure-ulcer-plan / nursing-contents {extract,appointments,diff}（未指定=SDK既定1.0でブレていた）
+- **P2-5 system↔tool desc 重複解消**: visit-report（descの【看護タイトル】形式指示がsystemの段落形式指示と実は競合していた→desc薄化でsystemに一本化）/ info-provision（3段落構成の二重定義解消）/ evaluate（評価本文の書き方の二重定義解消）
+- **P2-6 補正リスト共通化**: `lib/medical-term-corrections.ts` 新設（DETAILED/COMPACT の2形式）。8ルート×4フォーマットの個別ハードコードを一本化し、項目もルート間で統一（evaluateの14項目→全量、間欠/関節/仰臥位等を全ルートに展開）。**今後の誤変換追加はこのファイルだけを直す**
+- 検証: tsc✅ / quality-gate 10/10 / **出力トークン -12.2%**（8,672→7,611・10ケース計）/ 応答平均 約7.1s→5.6s / **judge 65.8%→71.7%**（R3 1.10→1.40, R4 1.00→1.20, R6 1.60→1.80, R2/R5 2.00維持, R1 0.20=保留項目のみ）→ 品質非劣化どころか向上
+- 見送り（調査済み・記録のみ）: Few-shot圧縮（キャッシュ黒字・資産リスクに合わない）/ SOAP+alerts の1コール統合（大工事・マルチテナント時に再検討）
+
 ## 2026-07-04 — alerts（確認質問）改修：過去3回継続事項の検出強化・バイタル完全除外
 
 - 変更ファイル: `app/api/soap/questions/route.ts`, `tests/prompts/soap/run.ts`（※run.ts側questionsミラーがquestions廃止前の旧版のまま乖離していたため、alerts専用の現行版に再同期）
