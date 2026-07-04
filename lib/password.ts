@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync } from "crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "crypto";
 
 const SALT_LENGTH = 16;
 const KEY_LENGTH = 64;
@@ -10,10 +10,12 @@ export function hashPassword(password: string): string {
   return `${salt}:${hash}`;
 }
 
-/** パスワードを検証 */
+/** パスワードを検証（タイミング攻撃対策として定数時間比較を使用） */
 export function verifyPassword(password: string, stored: string): boolean {
   const [salt, hash] = stored.split(":");
   if (!salt || !hash) return false;
-  const hashToVerify = scryptSync(password, salt, KEY_LENGTH).toString("hex");
-  return hash === hashToVerify;
+  const hashToVerify = scryptSync(password, salt, KEY_LENGTH);
+  const storedHash = Buffer.from(hash, "hex");
+  if (storedHash.length !== hashToVerify.length) return false;
+  return timingSafeEqual(storedHash, hashToVerify);
 }

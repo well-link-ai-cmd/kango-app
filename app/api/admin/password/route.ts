@@ -24,9 +24,9 @@ export async function POST(request: Request) {
   }
 
   const { currentPassword, newPassword } = await request.json();
-  if (!newPassword || newPassword.length < 4) {
+  if (!newPassword || newPassword.length < 8) {
     return NextResponse.json(
-      { error: "新しいパスワードは4文字以上で設定してください" },
+      { error: "新しいパスワードは8文字以上で設定してください" },
       { status: 400 }
     );
   }

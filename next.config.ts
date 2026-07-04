@@ -16,11 +16,26 @@ const nextConfig: NextConfig = {
           },
           // 未使用の強権限を閉じる。写真撮影(camera)・音声入力(microphone)は
           // self を許可して既存挙動を壊さない。位置情報・決済・USB等は無効化。
-          // ※ CSP は本アプリがインラインstyleを多用するため未導入（壊さない判断）。
-          //   将来 Report-Only で計測してから段階導入する。
           {
             key: "Permissions-Policy",
             value: "camera=(self), microphone=(self), geolocation=(), payment=(), usb=(), browsing-topics=()",
+          },
+          // CSP は Report-Only（違反してもブロックせず、ブラウザConsoleに警告が出るだけ）。
+          // インラインstyle多用のため 'unsafe-inline' を許可した緩いポリシーで違反を計測し、
+          // 問題がないことを確認してから enforce（Content-Security-Policy）へ段階移行する。
+          {
+            key: "Content-Security-Policy-Report-Only",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https://*.supabase.co",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+              "font-src 'self' data:",
+              "frame-ancestors 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+            ].join("; "),
           },
         ],
       },
