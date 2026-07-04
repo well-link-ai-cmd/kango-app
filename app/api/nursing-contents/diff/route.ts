@@ -3,6 +3,7 @@ import { generateAiResponse } from "@/lib/ai-client";
 import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser } from "@/lib/supabase-server";
 
+import { logAiSend } from "@/lib/audit-server";
 export async function POST(req: NextRequest) {
   const user = await getAuthUser();
   if (!user) {
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest) {
 ${recordsText}`;
 
   try {
+    // 医療情報のAI送信を監査記録（越境送信の記録・fire-and-forget）
+    logAiSend("nursing_contents_diff", null);
     const response = await generateAiResponse(prompt, systemPrompt, { temperature: 0.2 });
     const jsonMatch = response.text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {

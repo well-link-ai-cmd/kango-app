@@ -5,6 +5,7 @@ import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 import { SOAP_FEWSHOT_EXAMPLES } from "@/lib/soap-fewshot";
 
 import { MEDICAL_TERM_CORRECTIONS_DETAILED } from "@/lib/medical-term-corrections";
+import { logAiSend } from "@/lib/audit-server";
 /**
  * 参照コンテキストの優先順位（過渡期）：
  *   1. 看護計画書（is_draft=false の最新 plan_date）← あればこれを優先参照
@@ -208,6 +209,8 @@ ${rawInput}`;
   };
 
   try {
+    // 医療情報のAI送信を監査記録（越境送信の記録・fire-and-forget）
+    logAiSend("soap_generate", patientId ?? null);
     const response = await generateAiResponse(prompt, systemPrompt, {
       temperature: 0.2,
       tool: soapTool,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateAiResponse } from "@/lib/ai-client";
 import { getAuthUser, getServerSupabase } from "@/lib/supabase-server";
 
+import { logAiSend } from "@/lib/audit-server";
 interface PreviousRecord {
   visitDate: string;
   S: string;
@@ -133,6 +134,8 @@ ${rawInput}`;
   };
 
   try {
+    // 医療情報のAI送信を監査記録（越境送信の記録・fire-and-forget）
+    logAiSend("soap_alerts", patientId ?? null);
     const response = await generateAiResponse(prompt, systemPrompt, {
       temperature: 0.2,
       tool: questionsTool,

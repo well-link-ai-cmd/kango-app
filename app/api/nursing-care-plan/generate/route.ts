@@ -5,6 +5,7 @@ import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser } from "@/lib/supabase-server";
 
 import { MEDICAL_TERM_CORRECTIONS_DETAILED } from "@/lib/medical-term-corrections";
+import { logAiSend } from "@/lib/audit-server";
 /**
  * 看護計画書 AI生成API（目標・課題の下書き）
  *
@@ -110,6 +111,8 @@ export async function POST(req: NextRequest) {
   };
 
   try {
+    // 医療情報のAI送信を監査記録（越境送信の記録・fire-and-forget）
+    logAiSend("care_plan_generate", null);
     const response = await generateAiResponse(userPrompt, systemPrompt, {
       model: "sonnet",
       maxTokens: 4096,

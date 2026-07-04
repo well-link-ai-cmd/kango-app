@@ -5,6 +5,7 @@ import { getAuthUser } from "@/lib/supabase-server";
 import type { InfoProvisionAddressee } from "@/lib/storage";
 
 import { MEDICAL_TERM_CORRECTIONS_COMPACT } from "@/lib/medical-term-corrections";
+import { logAiSend } from "@/lib/audit-server";
 /**
  * 訪問看護情報提供書 AI生成API（4宛先対応）
  *
@@ -201,6 +202,8 @@ export async function POST(req: NextRequest) {
   };
 
   try {
+    // 医療情報のAI送信を監査記録（越境送信の記録・fire-and-forget）
+    logAiSend("info_provision", null);
     const response = await generateAiResponse(userPrompt, systemPrompt, {
       model: "haiku",
       maxTokens: 4096,

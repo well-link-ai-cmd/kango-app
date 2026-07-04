@@ -4,6 +4,7 @@ import { aiErrorResponse } from "@/lib/ai-error-response";
 import { getAuthUser } from "@/lib/supabase-server";
 
 import { MEDICAL_TERM_CORRECTIONS_DETAILED } from "@/lib/medical-term-corrections";
+import { logAiSend } from "@/lib/audit-server";
 /**
  * 褥瘡計画書 AI生成API
  *
@@ -93,6 +94,8 @@ export async function POST(req: NextRequest) {
 
   try {
     // 5軸×各1000字=最大5000字の日本語出力が想定されるため、max_tokens=8192で余裕を持たせる
+    // 医療情報のAI送信を監査記録（越境送信の記録・fire-and-forget）
+    logAiSend("pressure_ulcer_plan", null);
     const response = await generateAiResponse(userPrompt, systemPrompt, { maxTokens: 8192, timeoutMs: 60000, temperature: 0.2 });
 
     const jsonMatch = response.text.match(/\{[\s\S]*\}/);
