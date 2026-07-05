@@ -60,6 +60,7 @@ interface CaseInput {
   carePlan?: string;
   previousRecords?: PrevRecord[];
   initialSoapRecords?: { text: string; visitDate?: string }[];
+  intakeNotes?: string;
   nursingContentItems?: string[];
   alertAnswers?: { question: string; answer: string }[];
   questionAnswers?: { question: string; answer: string }[];
@@ -115,6 +116,7 @@ function formatInputMaterials(input: CaseInput): string {
   if (input.sInput) parts.push(`【S情報（看護師が入力した利用者・家族の発言）】\n${input.sInput}`);
   else parts.push(`【S情報】（提供なし → S欄は空であるべき）`);
   if (input.carePlan) parts.push(`【ケアプラン方針】\n${input.carePlan}`);
+  if (input.intakeNotes) parts.push(`【導入時情報（退院前カンファレンス・申し送り等。A/Pの判断材料として生成AIに提供されている）】\n${input.intakeNotes}`);
   if (input.previousRecords?.length) {
     parts.push(
       `【前回までの記録】\n` +

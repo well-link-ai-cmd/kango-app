@@ -176,6 +176,7 @@ export default function NewRecordPage() {
           alertAnswers,
           questionAnswers,
           initialSoapRecords: recentRecords.length === 0 ? patient?.initialSoapRecords : undefined,
+          intakeNotes: recentRecords.length < 3 ? patient?.intakeNotes : undefined,
         }),
       });
       if (!res.ok) {
@@ -208,6 +209,7 @@ export default function NewRecordPage() {
           rawInput,
           carePlan: patient.carePlan,
           initialSoapRecords: patient.initialSoapRecords,
+          intakeNotes: patient.intakeNotes,
         }),
       });
       if (!res.ok) {

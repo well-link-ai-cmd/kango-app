@@ -186,6 +186,10 @@ export interface Patient {
   // ケアマネのケアプラン（写真をAIが読み取り、看護計画立案の最優先資料にする）
   careManagerPlan?: CareManagerPlan;
 
+  // 導入時情報（退院前カンファレンス・申し送り・サマリ等の自由テキスト）
+  // SOAP生成のA/P判断材料＋看護計画のカンファ欄プリフィルに使う（migration 019）
+  intakeNotes?: string;
+
   // 導入時に貼り付ける直近のSOAP記録（カイポケ等からの貼り付け生テキスト。医療用語・言い回しの参考に使う）
   initialSoapRecords?: {
     text: string;
@@ -368,6 +372,7 @@ function patientToRow(p: Patient, userId?: string, orgId?: string): Record<strin
     care_plan: p.carePlan ?? null,
     care_manager_plan: p.careManagerPlan ?? null,
     initial_soap_records: p.initialSoapRecords ?? null,
+    intake_notes: p.intakeNotes ?? null,
     created_at: p.createdAt,
   };
   if (userId) row.user_id = userId;
@@ -410,6 +415,7 @@ function rowToPatient(row: any): Patient {
     carePlan: row.care_plan ?? undefined,
     careManagerPlan: row.care_manager_plan ?? undefined,
     initialSoapRecords: normalizeInitialSoap(row.initial_soap_records),
+    intakeNotes: row.intake_notes ?? undefined,
     createdAt: row.created_at,
   };
 }

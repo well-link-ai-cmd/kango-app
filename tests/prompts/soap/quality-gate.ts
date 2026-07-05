@@ -28,6 +28,12 @@ for (const c of data.cases) {
   if (c.id === "case-07-sinfo-influences-ap") {
     if (!r.S.includes("背中の痛み")) { pass = false; reason = "S情報passthrough失敗"; }
   }
+  if (c.id === "case-09-intake-notes-first-visit") {
+    // カンファ由来の過去エピソードをOに創作しない／方針（転倒・服薬）はA/Pに考慮される
+    if (r.O.includes("入院中") || r.O.includes("カンファ")) { pass = false; reason = "Oにカンファ由来エピソード混入: " + r.O.slice(0, 40); }
+    else if (!(r.A + r.P).includes("転倒")) { pass = false; reason = "A/Pに転倒リスクの考慮なし"; }
+    else if (r.S.length > 0) { pass = false; reason = "S流入: " + r.S; }
+  }
   checks.push({ id: c.id, pass, reason });
 }
 const passed = checks.filter((x) => x.pass).length;

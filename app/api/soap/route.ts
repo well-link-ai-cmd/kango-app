@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { patientId, sInput, rawInput, carePlan, previousRecords, alertAnswers, questionAnswers, initialSoapRecords } = body;
+  const { patientId, sInput, rawInput, carePlan, previousRecords, alertAnswers, questionAnswers, initialSoapRecords, intakeNotes } = body;
 
   if (!rawInput?.trim()) {
     return NextResponse.json({ error: "訪問内容が入力されていません" }, { status: 400 });
@@ -74,6 +74,11 @@ export async function POST(req: NextRequest) {
         .join("\n\n") + "\n"
     : "";
 
+  // 導入時情報（退院前カンファレンス・申し送り等）：経過・方針の判断材料（judgment-only。今日の事実(O)・発言の抽出元にしない）
+  const intakeNotesSection = intakeNotes && String(intakeNotes).trim()
+    ? `\n【導入時情報（退院前カンファレンス・申し送り等。経過・方針の判断材料）】\n${String(intakeNotes).trim()}\n`
+    : "";
+
   // 継続確認アラートへの回答（メモの記載漏れを補う事実 → 必ず O/A/P に反映。S 欄には入れない）
   const alertAnswersSection = alertAnswers && alertAnswers.length > 0
     ? "\n【前回からの継続確認事項への回答（今回の事実として必ず O/A/P に反映。S 欄には入れない）】\n" +
@@ -117,6 +122,7 @@ export async function POST(req: NextRequest) {
 - 【S情報】：corrected_s_input への passthrough、A・P の判断材料（本人の訴えとして臨床判断に反映。例「痛みが増した」→ A で疼痛増悪評価、P でレスキュー検討）
 - 【AIからの確認質問への回答】【前回からの継続確認事項への回答】：メモの記載漏れを補う事実。空欄でなければ O/A/P に反映する（S 欄には入れない）
 - 【過去記録】：文体の手本と、今日の事実に対する「前回からの変化」の判断材料。今日の入力（メモ・S情報・回答）に対応する事実がない項目のアセスメント・計画を過去記録から持ち込まない（未実施項目の継続確認は確認質問機能が担う）
+- 【導入時情報】：退院前カンファレンス・申し送り等。病状経過・療養方針・注意点を A・P の判断材料として考慮してよい（例：カンファで転倒リスクの指摘 → P で転倒予防の観察を計画）。ここから今日の事実（O）を作らない・発言を corrected_s_input に入れない
 - 【ケアプラン（旧欄）】：看護計画書がない場合のみ補助参照
 
 参照優先順位：看護計画書（確定版） > 過去記録・メモ > 旧ケアプラン欄
@@ -169,13 +175,13 @@ ${SOAP_FEWSHOT_EXAMPLES}`;
     : "";
 
   const prompt = hasSInput
-    ? `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${initialReferenceSection}${alertAnswersSection}${answersSection}【S情報（看護師入力済み・誤変換のみ補正してそのまま返す）】
+    ? `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${initialReferenceSection}${intakeNotesSection}${alertAnswersSection}${answersSection}【S情報（看護師入力済み・誤変換のみ補正してそのまま返す）】
 ${sInput}
 
 【今回の訪問メモ（これをO・A・Pに変換する）】
 ${rawInput}`
 
-    : `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${initialReferenceSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
+    : `${activeNursingCarePlanSection}${prevStyleSection}${prevPlanSection}${carePlanSection}${initialReferenceSection}${intakeNotesSection}${alertAnswersSection}${answersSection}【今回の訪問メモ（これをS・O・A・Pに変換する）】
 ${rawInput}`;
 
   // Tool use でJSON形式を強制。

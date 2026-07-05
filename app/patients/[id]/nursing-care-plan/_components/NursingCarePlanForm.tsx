@@ -141,7 +141,8 @@ export default function NursingCarePlanForm({
   );
 
   // ---- 議事録（任意・AI生成時の参照ソース） ----
-  const [conferenceMemo, setConferenceMemo] = useState(initialPlan?.conferenceMemo ?? "");
+  // カンファ欄の初期値: 既存計画の値 > 基礎情報の導入時情報（退院前カンファ・申し送り）からプリフィル
+  const [conferenceMemo, setConferenceMemo] = useState(initialPlan?.conferenceMemo ?? patient.intakeNotes ?? "");
 
   // ---- ラベル候補提示（NANDAフロー Step 1） ----
   const [labelCandidates, setLabelCandidates] = useState<LabelCandidate[]>([]);

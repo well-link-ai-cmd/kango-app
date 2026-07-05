@@ -35,6 +35,10 @@ export default function NewPatientPage() {
   const [openNursingContents, setOpenNursingContents] = useState(false);
   const [nursingContentsText, setNursingContentsText] = useState("");
 
+  // 導入時情報（退院前カンファレンス・申し送り等）— SOAP生成の判断材料＋看護計画カンファ欄プリフィル
+  const [openIntakeNotes, setOpenIntakeNotes] = useState(false);
+  const [intakeNotesText, setIntakeNotesText] = useState("");
+
   // 直近のSOAP記録（導入時の初期データ）— 1つのtextareaに統合
   const [openInitialSoap, setOpenInitialSoap] = useState(false);
   const [initialSoapText1, setInitialSoapText1] = useState("");
@@ -84,6 +88,7 @@ export default function NewPatientPage() {
         careManagerPlanImages.length > 0 || careManagerPlanText.trim()
           ? { images: careManagerPlanImages, text: careManagerPlanText.trim() || undefined }
           : undefined,
+      intakeNotes: intakeNotesText.trim() || undefined,
       initialSoapRecords: initialSoapRecords.length > 0 ? initialSoapRecords : undefined,
       createdAt: new Date().toISOString(),
     });
@@ -381,6 +386,41 @@ export default function NewPatientPage() {
                 />
                 <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
                   {parseNursingContentLines(nursingContentsText).length} 件が登録されます
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Intake Notes（退院前カンファレンス・申し送り） */}
+          <div className="card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setOpenIntakeNotes(!openIntakeNotes)}
+              className="w-full flex items-center justify-between px-5 py-4 transition-colors hover:bg-[rgba(0,200,200,0.02)]"
+            >
+              <div className="text-left flex items-start gap-3">
+                <FileText size={20} style={{ color: "var(--accent-cyan)", marginTop: "2px" }} />
+                <div>
+                  <p className="font-semibold" style={{ color: "var(--text-primary)" }}>退院前カンファレンス・申し送り事項</p>
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>議事録やサマリを貼り付けると、初回からAIが経過・方針を踏まえて記録を生成します（任意）</p>
+                </div>
+              </div>
+              {openIntakeNotes
+                ? <ChevronUp size={18} style={{ color: "var(--text-muted)" }} />
+                : <ChevronDown size={18} style={{ color: "var(--text-muted)" }} />}
+            </button>
+            {openIntakeNotes && (
+              <div className="px-5 pb-5 animate-fade-in">
+                <textarea
+                  rows={8}
+                  className="input-field text-sm"
+                  style={{ resize: "vertical", fontFamily: "inherit" }}
+                  placeholder={"例：退院前カンファレンス（YYYY/MM/DD）\n参加者：主治医、病棟看護師、ご家族、当ステーション\n・入院中の経過：\n・退院後の療養方針：\n・注意点（内服・処置・リスク）："}
+                  value={intakeNotesText}
+                  onChange={(e) => setIntakeNotesText(e.target.value)}
+                />
+                <p className="text-xs mt-2" style={{ color: "var(--text-muted)" }}>
+                  看護計画書ページの「カンファレンス議事録」欄にも自動で引き継がれます
                 </p>
               </div>
             )}
