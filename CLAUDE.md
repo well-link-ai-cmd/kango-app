@@ -48,9 +48,8 @@
 ### 2026-07-06 午前追記（レディネス一式 本番デプロイ完了・SQL適用は中断中）
 - 導入判断メニューA+B一式をオーナー承認 → 法務文書のプレースホルダ整備 → **masterマージ＆本番デプロイ完了**（コミット4f3d476・READY確認済み）。マージ済みfeatブランチは削除済み
 - 副産物: vercel.json ignoreCommand の欠陥修正（FFマージ末尾がdocsコミットだと全変更スキップ→前回デプロイSHA基準に）
-- **🔜 中断点: SupabaseのSQL適用5ステップが未実施**（オーナー外出のため帰宅後に再開）。手順は直前の会話または以下:
-  ①`manual/R1_interim_lockdown.sql` ②`migrations/016` ③`migrations/017` ④`migrations/018` ⑤`manual/015_verify.sql`で0件確認→`migrations/015`
-  → 適用後の実機確認: 記録保存→audit_logs記録／写真登録→表示／/contact送信→inquiries
+- **✅ SQL適用5ステップ完了（2026-07-05夜・オーナー実施）**: ①R-1封じ ②016 ③017 ④018 ⑤verify(0件確認)→015。実機確認3点合格: audit_logsに `ai_send`＋`save` 記録あり／写真登録・表示OK／問い合わせ送信→inquiries保存OK（storage.objectsポリシーも `patient-files org 〜` 4本に置換確認済み）
+- 残メモ: 問い合わせのメール通知は未設定（GAS・導入判断メニューD-3・15分作業）。それまで問い合わせ確認はSQL（`select category, body, user_email, status, created_at from inquiries order by created_at desc;`）
 - 有料契約のタイミング方針（オーナー合意）: Supabase Proは「他事業所の実データを預かる前日」まで／つなぎに無料の自前エクスポート機能（解約時データ返却と兼用）を今後実装／Stripeは2〜3件目から／Sentryは売り出し準備期に無料枠
 
 ### 次回タスク
