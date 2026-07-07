@@ -189,6 +189,7 @@ function buildSoapRequest(input: CaseInput) {
 - 過去記録があれば、文末表現・文の長さに合わせる（語尾「〜みられる」「〜である」、短文/長文）
 - 過去記録がない場合は「〜みられる」「〜である」調の標準的な看護記録文体
 - 見出し・箇条書き・番号リストは使わない。自然な文章で書く
+- 記録は利用者・家族が読む可能性を前提に、不快・失礼に響く表現を避ける。発言の客観記載は「〜とのこと」「〜と話される」「〜とおっしゃる」を用い、「〜と述べている」は使わない
 - 事実ソースにない事実を創作しない
 - 過去記録の医療用語の表記が補正リストの誤変換と一致する場合は、補正後の用語で書く（過去記録に揃えない）
 
@@ -384,21 +385,34 @@ async function callSoapOnce(
   model: ModelKey
 ): Promise<SoapRunResult> {
   const started = Date.now();
-  const response = await generateAiResponse(prompt, systemPrompt, {
-    temperature: 0.2,
-    tool: soapTool,
-    maxTokens: 6144,
-    model,
-    cacheSystemTtl: "1h",
-  });
+  // route.ts と同期: O/A/P欠落（生成途中停止・2026-07-07に約8%で確認）は1回だけ自動リトライする
+  let toolInput: SoapToolOutput | null = null;
+  let rawText = "";
+  let usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  for (let attempt = 1; attempt <= 2 && !toolInput; attempt++) {
+    const response = await generateAiResponse(prompt, systemPrompt, {
+      temperature: 0.2,
+      tool: soapTool,
+      maxTokens: 6144,
+      model,
+      cacheSystemTtl: "1h",
+    });
+    const cand = (response.toolInput as SoapToolOutput | undefined) ?? null;
+    rawText = response.text;
+    usage = response.usage ?? usage;
+    if (cand && cand.O?.trim() && cand.A?.trim() && cand.P?.trim()) {
+      toolInput = cand;
+    } else {
+      console.log(`  ⚠ O/A/P欠落（生成途中停止・attempt ${attempt}/2）→ ${attempt < 2 ? "自動リトライ" : "失敗"}`);
+    }
+  }
   const elapsedMs = Date.now() - started;
-  const toolInput = (response.toolInput as SoapToolOutput | undefined) ?? null;
   return {
     model,
     toolInput,
-    rawText: response.text,
+    rawText,
     elapsedMs,
-    usage: response.usage ?? { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    usage,
     outputChars: computeOutputChars(toolInput),
   };
 }

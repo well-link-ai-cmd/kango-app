@@ -144,6 +144,7 @@ export async function POST(req: NextRequest) {
 - 過去記録があれば、文末表現・文の長さに合わせる（語尾「〜みられる」「〜である」、短文/長文）
 - 過去記録がない場合は「〜みられる」「〜である」調の標準的な看護記録文体
 - 見出し・箇条書き・番号リストは使わない。自然な文章で書く
+- 記録は利用者・家族が読む可能性を前提に、不快・失礼に響く表現を避ける。発言の客観記載は「〜とのこと」「〜と話される」「〜とおっしゃる」を用い、「〜と述べている」は使わない
 - 事実ソースにない事実を創作しない
 - 過去記録の医療用語の表記が補正リストの誤変換と一致する場合は、補正後の用語で書く（過去記録に揃えない）
 
@@ -216,29 +217,38 @@ ${rawInput}`;
   };
 
   try {
-    // 医療情報のAI送信を監査記録（越境送信の記録・fire-and-forget）
-    logAiSend("soap_generate", patientId ?? null);
-    const response = await generateAiResponse(prompt, systemPrompt, {
-      temperature: 0.2,
-      tool: soapTool,
-      // extracted_facts / coverage_check の分だけ余裕を持たせる
-      maxTokens: 6144,
-      // 固定 systemプロンプト（指示＋Few-shot 約13,000トークン）を1時間TTLでキャッシュし入力単価を1/10に。
-      // 朝のまとめ書きで複数件・複数スタッフが近接時間に走るためヒット率が見込める（systemは患者非依存の完全固定）。
-      cacheSystemTtl: "1h",
-    });
-
-    if (!response.toolInput) {
-      return NextResponse.json({ error: "AIの応答を解析できませんでした。もう一度お試しください。" }, { status: 500 });
+    // 生成が途中停止して O/A/P が欠けたまま返ることが稀にある（間欠事象・2026-07-07に約8%で確認）。
+    // 空の記録を黙って保存させないため、欠落時は1回だけ自動リトライし、それでも欠けていればエラーで再試行を促す。
+    let ti: { O: string; A: string; P: string; corrected_s_input?: string } | null = null;
+    for (let attempt = 1; attempt <= 2 && !ti; attempt++) {
+      // 医療情報のAI送信を監査記録（越境送信の記録・fire-and-forget）
+      logAiSend("soap_generate", patientId ?? null);
+      const response = await generateAiResponse(prompt, systemPrompt, {
+        temperature: 0.2,
+        tool: soapTool,
+        // extracted_facts / coverage_check の分だけ余裕を持たせる
+        maxTokens: 6144,
+        // 固定 systemプロンプト（指示＋Few-shot 約13,000トークン）を1時間TTLでキャッシュし入力単価を1/10に。
+        // 朝のまとめ書きで複数件・複数スタッフが近接時間に走るためヒット率が見込める（systemは患者非依存の完全固定）。
+        cacheSystemTtl: "1h",
+      });
+      const cand = response.toolInput as { O?: unknown; A?: unknown; P?: unknown; corrected_s_input?: string } | undefined;
+      if (
+        cand &&
+        typeof cand.O === "string" && cand.O.trim() &&
+        typeof cand.A === "string" && cand.A.trim() &&
+        typeof cand.P === "string" && cand.P.trim()
+      ) {
+        ti = cand as { O: string; A: string; P: string; corrected_s_input?: string };
+      } else {
+        console.error(`soap生成: O/A/P欠落（attempt ${attempt}/2）`);
+      }
+    }
+    if (!ti) {
+      return NextResponse.json({ error: "AIの応答が不完全でした。もう一度お試しください。入力内容は自動保存されています。" }, { status: 500 });
     }
 
     // 内部確認用フィールドは返さず、S/O/A/P のみ返す（S欄はLLM出力させず下記で機械決定）
-    const ti = response.toolInput as { O: string; A: string; P: string; corrected_s_input?: string };
-    // 生成が途中停止すると O/A/P が欠けたまま返ることがある（間欠事象・2026-07-07確認）。
-    // 空の記録を黙って保存させないため、欠落時はエラーで再試行を促す。
-    if (typeof ti.O !== "string" || !ti.O.trim() || typeof ti.A !== "string" || !ti.A.trim() || typeof ti.P !== "string" || !ti.P.trim()) {
-      return NextResponse.json({ error: "AIの応答が不完全でした。もう一度お試しください。入力内容は自動保存されています。" }, { status: 500 });
-    }
     const { O, A, P } = ti;
     // S は LLM の自由生成に任せず、看護師入力の【S情報】を機械的に採用する（簡略化・話者ラベル落ち防止）。
     // 誤変換補正版（corrected_s_input）は「語単位の誤字補正」の範囲でのみ採用し、
