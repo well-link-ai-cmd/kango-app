@@ -26,7 +26,7 @@ import { logAiSend } from "@/lib/audit-server";
  * モデル: Claude Haiku 4.5（要約系のため Haiku で十分。評価機能で実証済み）
  */
 
-const PROMPT_VERSION = "visit-report-v1.1.0";
+const PROMPT_VERSION = "visit-report-v1.1.1"; // v1.1.1: 開示に耐える表現ルール（「述べている」禁止・2026-07-07）
 const AI_MODEL = "claude-haiku-4-5-20251001";
 
 export const maxDuration = 120;
@@ -177,6 +177,7 @@ function buildSystemPrompt(isPsych: boolean): string {
 
 # 出力ルール
 - Tool use の output_visit_report を必ず使用。前置き・コードブロック禁止
+- 利用者・家族が読む可能性を前提に、不快・失礼に響く表現を避ける。本人・家族の発言に触れる場合は「〜とのことです」「〜と話されています」を用い、「〜と述べている」は使わない
 - 各欄は記載のあった事実のみ書く。SOAPにない情報の創作禁止
 - 「不明」「未評価」と書くべき箇所を埋めない（その場合は何も書かない or 「期間中の記録に明確な記載なし」と明記）
 - 「概ね安定」「やや増加傾向」のような幅のある表現を活用し、断定（「改善した」「悪化した」）は避ける
