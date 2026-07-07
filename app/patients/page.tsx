@@ -30,6 +30,11 @@ const KANA_GROUPS = [
   { label: "わ行", chars: "わをんワヲンヴ" },
 ];
 
+// 一覧の表示状態（検索語・あかさたなタブ）と直前に開いた利用者をセッション内で保持し、
+// カルテから戻ったときにホーム先頭ではなく元の場所へ復帰できるようにする
+const LIST_STATE_KEY = "patients_list_state";
+const LAST_VIEWED_KEY = "patients_last_viewed";
+
 function getKanaGroup(patient: Patient): string {
   const kana = patient.nameKana?.trim();
   if (!kana) return "その他";
@@ -63,6 +68,7 @@ export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeGroup, setActiveGroup] = useState<string | null>(null);
+  const [listStateRestored, setListStateRestored] = useState(false);
 
   // モーダル
   const [infoPatient, setInfoPatient] = useState<Patient | null>(null);
@@ -90,6 +96,39 @@ export default function PatientsPage() {
       setPlanReviewPatientIds(await getPatientsNeedingPlanReview());
     })();
   }, []);
+
+  // マウント時に前回の表示状態（検索語・タブ）を復元
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(LIST_STATE_KEY);
+      if (saved) {
+        const s = JSON.parse(saved) as { q?: string; group?: string | null };
+        if (s.q) setSearchQuery(s.q);
+        if (s.group) setActiveGroup(s.group);
+      }
+    } catch {
+      // 保存データ破損時は初期状態のまま
+    }
+    setListStateRestored(true);
+  }, []);
+
+  // 表示状態を保存（復元完了後のみ。復元前のデフォルト値で上書きしない）
+  useEffect(() => {
+    if (!listStateRestored) return;
+    sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify({ q: searchQuery, group: activeGroup }));
+  }, [listStateRestored, searchQuery, activeGroup]);
+
+  // カルテから戻ったとき、直前に開いていた利用者のカードへスクロール
+  useEffect(() => {
+    if (!listStateRestored || patients.length === 0) return;
+    const id = sessionStorage.getItem(LAST_VIEWED_KEY);
+    if (!id) return;
+    sessionStorage.removeItem(LAST_VIEWED_KEY);
+    // タブ・検索の復元が描画に反映されてからスクロールする
+    requestAnimationFrame(() => {
+      document.getElementById(`patient-card-${id}`)?.scrollIntoView({ block: "center" });
+    });
+  }, [listStateRestored, patients]);
 
   async function handleDelete(id: string, name: string) {
     if (!confirm(`${name} 様の情報と全記録を削除しますか？`)) return;
@@ -208,6 +247,12 @@ export default function PatientsPage() {
 
   // 存在するグループだけタブに表示
   const availableGroups = useMemo(() => grouped.map((g) => g.label), [grouped]);
+
+  // 復元したタブが存在しなくなっている場合（利用者削除等）は「すべて」に戻す
+  useEffect(() => {
+    if (!listStateRestored || patients.length === 0) return;
+    if (activeGroup && !availableGroups.includes(activeGroup)) setActiveGroup(null);
+  }, [listStateRestored, patients, availableGroups, activeGroup]);
 
   // activeGroupフィルタ
   const displayed = activeGroup
@@ -367,10 +412,11 @@ export default function PatientsPage() {
 
                     <ul className="space-y-2">
                       {groupPatients.map((p) => (
-                        <li key={p.id} className="card card-interactive overflow-hidden">
+                        <li key={p.id} id={`patient-card-${p.id}`} className="card card-interactive overflow-hidden">
                           <Link
                             href={`/patients/${p.id}`}
                             className="flex items-center gap-4 px-5 py-4 transition-colors"
+                            onClick={() => sessionStorage.setItem(LAST_VIEWED_KEY, p.id)}
                           >
                             <div className="avatar">
                               {p.name.charAt(0)}
@@ -399,7 +445,11 @@ export default function PatientsPage() {
                             className="flex items-center gap-2 px-5 pb-3"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <Link href={`/patients/${p.id}/nursing-contents`} className="btn-quick">
+                            <Link
+                              href={`/patients/${p.id}/nursing-contents`}
+                              className="btn-quick"
+                              onClick={() => sessionStorage.setItem(LAST_VIEWED_KEY, p.id)}
+                            >
                               <ClipboardList size={13} />
                               看護内容
                             </Link>
