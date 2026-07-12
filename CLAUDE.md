@@ -67,6 +67,7 @@
 - GitHub: `https://github.com/well-link-ai-cmd/kango-app`（master）
 
 ## 開発ワークフロー
+- **CLAUDE.mdは170行以内を保つ**。引き継ぎ追記で超えそうなら、先に完了済みの旧世代を `docs/archive/handover-old.md` へ退避してから追記する（未完了項目は「未完了の確認事項・残メモ」に集約して残す）
 - 大きな変更は `feat/*` ブランチ → preview確認 → master merge
 - Supabase migrationは手動実行（ダッシュボード > SQL Editor）
 - Vercel環境変数は Production / Preview 両方にセット必須
