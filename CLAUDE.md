@@ -76,6 +76,7 @@
 - `C:\Users\thegl\.claude\rules\ai-guardrails.md`：AI責任分界ルール
 - `C:\Users\thegl\.claude\agents\medical-reviewer.md`：医療ドメインレビュアー
 - `C:\Users\thegl\.claude\skills\prompt-tester\SKILL.md`：プロンプト品質検証
+- `C:\Users\thegl\.claude\skills\shared\well-link-design\DESIGN.md`：UIデザイントークン正本（globals.css抽出元。画面追加時に参照）
 
 ## 実装前の6段はしご（コードを書く前に必ずこの順で検討）
 1. そもそもその機能は存在する必要があるか

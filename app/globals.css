@@ -12,13 +12,15 @@
   --text-muted: #8A8AA0;
 
   --accent-cyan: #00C8C8;
+  --accent-purple: #6B5CE7;
   --accent-magenta: #D600D6;
   --accent-blue: #3366FF;
   --accent-error: #FF4444;
   --accent-success: #00C896;
 
-  --gradient-main: linear-gradient(135deg, #00C8C8, #D600D6);
-  --gradient-hover: linear-gradient(135deg, #D600D6, #00C8C8);
+  /* 3色グラデはパープル経由で繋ぐ（DESIGN.md v1.1.0・シアン→マゼンタ直結禁止） */
+  --gradient-main: linear-gradient(135deg, #00C8C8, #6B5CE7, #D600D6);
+  --gradient-hover: linear-gradient(135deg, #D600D6, #6B5CE7, #00C8C8);
   --gradient-save: linear-gradient(135deg, #00C896, #00C8C8);
 
   /* Glows */
