@@ -487,9 +487,9 @@ export default function PatientsPage() {
                             </div>
                             <ChevronRight size={20} style={{ color: "var(--text-muted)" }} className="flex-shrink-0" />
                           </Link>
-                          {/* クイックアクションボタン */}
+                          {/* クイックアクションボタン（携帯幅で溢れるため折り返し必須） */}
                           <div
-                            className="flex items-center gap-2 px-5 pb-3"
+                            className="flex flex-wrap items-center gap-2 px-5 pb-3"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <Link
