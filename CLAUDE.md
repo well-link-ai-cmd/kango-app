@@ -11,6 +11,12 @@
 - 引き継ぎ書（作業リスト10件・優先順付き）: `.company/well-link-ai/tool-dev/projects/2026-07-04-kango-app-hikitsugi.md`
 - 戦略全文: `.company/well-link-ai/tool-dev/backline/2026-07-03-kango-app-strategy-fable.md`／意思決定記録: `.company/secretary/notes/2026-07-04-decisions.md`
 
+## 引き継ぎ（2026-07-16 — 3色グラデ＋携帯UI Phase 1 本番反映）
+
+- **3色グラデ化**（`5b4a54d`）: gradient-main/hoverをシアン→パープル→マゼンタに。デザイン正本= `~/.claude/skills/shared/well-link-design/DESIGN.md`
+- **携帯UI Phase 1**（`9eb8214`・`8506188`）: ①ヘッダー補助導線を携帯幅で「…」メニューに集約 ②携帯幅でinput/select/textareaを16px下限に強制（iOSズーム防止・帳票のtext-sm対策） ③タップ44px化（btn-quick/btn-delete/headerアイコン） ④クイックボタン列flex-wrap。**オーナー携帯実機確認OK（2026-07-16）**
+- **Phase 2候補（未着手・オーナーの体感FB待ち）**: 記録一覧行のボタン詰まり／情報提供書の3カラム固定（月選択欄90px）／ボトムシートモーダル×iOSキーボードの食い合い
+
 ## 引き継ぎ（2026-07-07 — S情報O欄再掲禁止・一覧位置復元・事業所ルール較正v2 本番反映）
 
 ### このセッションで完了（master 6e1242d・本番デプロイ済み）
