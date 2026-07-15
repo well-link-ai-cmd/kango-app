@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { getPatients, getRecords, deletePatient, migrateLocalStorageToSupabase, getPatientTodos, getPatientsWithPendingTodos, getPatientsNeedingPlanReview, addPatientTodo, togglePatientTodo, deletePatientTodo, SAVE_FAIL_MESSAGE, type Patient, type PatientTodo } from "@/lib/storage";
 import { getSupabase } from "@/lib/supabase";
-import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut, Settings, ListTodo, Plus, Check, BookOpen, MessageCircle } from "lucide-react";
+import { UserPlus, FileText, Trash2, ChevronRight, Search, ClipboardList, User, Calendar, X, Phone, LogOut, Settings, ListTodo, Plus, Check, BookOpen, MessageCircle, MoreVertical } from "lucide-react";
 import { getUserRole } from "@/components/AuthGate";
 
 const CARE_LEVEL_BADGE: Record<string, string> = {
@@ -87,6 +87,8 @@ export default function PatientsPage() {
   const [todoLoading, setTodoLoading] = useState(false);
   const [pendingTodoPatientIds, setPendingTodoPatientIds] = useState<Set<string>>(new Set());
   const [planReviewPatientIds, setPlanReviewPatientIds] = useState<Set<string>>(new Set());
+  // 携帯幅でヘッダーの補助導線（使い方・問い合わせ等）を集約する「…」メニューの開閉
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -259,6 +261,12 @@ export default function PatientsPage() {
     ? grouped.filter((g) => g.label === activeGroup)
     : grouped;
 
+  const handleLogout = () => {
+    sessionStorage.removeItem("access_verified");
+    sessionStorage.removeItem("user_role");
+    getSupabase().auth.signOut();
+  };
+
   return (
     <div className="min-h-screen relative z-[1]">
       {/* Header */}
@@ -274,36 +282,75 @@ export default function PatientsPage() {
               <UserPlus size={16} />
               利用者追加
             </Link>
-            <Link href="/guide" className="btn-outline" title="使い方ガイド">
-              <BookOpen size={16} />
-              使い方
-            </Link>
-            <Link href="/contact" className="btn-outline" title="お問い合わせ">
-              <MessageCircle size={16} />
-              問い合わせ
-            </Link>
-            {getUserRole() === "admin" && (
-              <Link
-                href="/admin"
+            {/* 携帯幅では補助導線を「…」メニューへ集約（横並び5個は375pxで右端が画面外に切れるため） */}
+            <div className="hidden sm:flex items-center gap-2">
+              <Link href="/guide" className="btn-outline" title="使い方ガイド">
+                <BookOpen size={16} />
+                使い方
+              </Link>
+              <Link href="/contact" className="btn-outline" title="お問い合わせ">
+                <MessageCircle size={16} />
+                問い合わせ
+              </Link>
+              {getUserRole() === "admin" && (
+                <Link
+                  href="/admin"
+                  className="btn-outline"
+                  style={{ padding: "0.5rem", minWidth: "auto" }}
+                  title="管理者設定"
+                >
+                  <Settings size={16} />
+                </Link>
+              )}
+              <button
+                onClick={handleLogout}
                 className="btn-outline"
                 style={{ padding: "0.5rem", minWidth: "auto" }}
-                title="管理者設定"
+                title="ログアウト"
               >
-                <Settings size={16} />
-              </Link>
-            )}
-            <button
-              onClick={() => {
-                sessionStorage.removeItem("access_verified");
-                sessionStorage.removeItem("user_role");
-                getSupabase().auth.signOut();
-              }}
-              className="btn-outline"
-              style={{ padding: "0.5rem", minWidth: "auto" }}
-              title="ログアウト"
-            >
-              <LogOut size={16} />
-            </button>
+                <LogOut size={16} />
+              </button>
+            </div>
+            <div className="relative sm:hidden">
+              <button
+                onClick={() => setHeaderMenuOpen((v) => !v)}
+                className="btn-outline"
+                style={{ padding: "0.75rem", minWidth: "auto" }}
+                title="メニュー"
+                aria-label="メニュー"
+                aria-expanded={headerMenuOpen}
+              >
+                <MoreVertical size={18} />
+              </button>
+              {headerMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-[110]"
+                    onClick={() => setHeaderMenuOpen(false)}
+                  />
+                  <div className="header-menu z-[120]">
+                    <Link href="/guide" className="header-menu-item" onClick={() => setHeaderMenuOpen(false)}>
+                      <BookOpen size={16} />
+                      使い方ガイド
+                    </Link>
+                    <Link href="/contact" className="header-menu-item" onClick={() => setHeaderMenuOpen(false)}>
+                      <MessageCircle size={16} />
+                      お問い合わせ
+                    </Link>
+                    {getUserRole() === "admin" && (
+                      <Link href="/admin" className="header-menu-item" onClick={() => setHeaderMenuOpen(false)}>
+                        <Settings size={16} />
+                        管理者設定
+                      </Link>
+                    )}
+                    <button className="header-menu-item" onClick={handleLogout}>
+                      <LogOut size={16} />
+                      ログアウト
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </header>

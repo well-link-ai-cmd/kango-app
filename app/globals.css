@@ -140,7 +140,7 @@ body {
 .header-back {
   color: var(--text-muted);
   transition: color var(--transition-fast);
-  padding: 4px;
+  padding: 10px; /* アイコン24px+余白でタップ領域44pxを確保 */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -153,7 +153,46 @@ body {
 .header-action {
   color: var(--text-muted);
   transition: color var(--transition-fast);
-  padding: 4px;
+  padding: 10px; /* アイコン24px+余白でタップ領域44pxを確保 */
+}
+
+/* ===== Header Mobile Menu（携帯幅で補助導線を集約する「…」メニュー） ===== */
+.header-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  min-width: 190px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.header-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  min-height: 44px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.header-menu-item:hover {
+  background: rgba(0, 200, 200, 0.06);
+  color: var(--accent-cyan);
 }
 
 .header-action:hover {
@@ -507,6 +546,11 @@ body {
 .btn-delete {
   color: var(--text-muted);
   padding: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 8px;
   transition: all var(--transition-fast);
   cursor: pointer;
@@ -571,6 +615,7 @@ body {
   align-items: center;
   gap: 4px;
   padding: 6px 12px;
+  min-height: 44px; /* タップ推奨サイズ（指での誤タップ防止） */
   font-size: 0.72rem;
   font-weight: 600;
   border-radius: 8px;
@@ -626,6 +671,17 @@ body {
 @keyframes slideUp {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
+}
+
+/* ===== Mobile: iOS入力ズーム防止 ===== */
+/* iOS Safariはfont-size 16px未満の入力欄にフォーカスすると自動ズームインする。
+   帳票フォーム（text-sm=14px指定）を含め、携帯幅では16pxを下限に強制する */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 /* ===== Reduced Motion ===== */
